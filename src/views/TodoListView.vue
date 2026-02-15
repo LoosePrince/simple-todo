@@ -13,8 +13,12 @@ const router = useRouter()
 const newTodoTitle = ref('')
 
 onMounted(async () => {
-  await settingsStore.loadConfig()
-  await todoStore.loadTodos(settingsStore.config.data_path)
+  try {
+    await settingsStore.loadConfig()
+  } catch (_) {}
+  try {
+    await todoStore.loadTodos(settingsStore.config.data_path)
+  } catch (_) {}
 })
 
 const handleAddTodo = async () => {

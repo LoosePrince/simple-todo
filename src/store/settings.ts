@@ -71,7 +71,9 @@ export const useSettingsStore = defineStore('settings', {
       }
     },
     async applySettings() {
-      await this.loadConfig()
+      try {
+        await this.loadConfig()
+      } catch (_) {}
     }
   }
 })

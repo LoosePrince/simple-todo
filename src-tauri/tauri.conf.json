@@ -24,9 +24,10 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset:",
+        "script-src": "'self' 'unsafe-inline' 'unsafe-eval' asset: https://asset.localhost https://tauri.localhost http://tauri.localhost",
         "connect-src": "ipc: http://ipc.localhost",
         "img-src": "'self' asset: http://asset.localhost blob: data:",
-        "style-src": "'unsafe-inline' 'self'"
+        "style-src": "'unsafe-inline' 'self' asset:"
       },
       "assetProtocol": {
         "enable": true,

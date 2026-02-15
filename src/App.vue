@@ -10,7 +10,7 @@ function preventContextMenu(e: Event) {
 }
 
 onMounted(() => {
-  settingsStore.applySettings()
+  settingsStore.applySettings().catch(() => {})
   document.addEventListener('contextmenu', preventContextMenu)
 })
 onUnmounted(() => {
