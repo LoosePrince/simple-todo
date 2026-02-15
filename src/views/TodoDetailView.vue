@@ -397,6 +397,10 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped>
 .todo-detail-view {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -407,22 +411,30 @@ const handleDrop = async (e: DragEvent) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 20px;
+  padding: 10px;
   border-bottom: 1px solid rgba(0,0,0,0.05);
+  gap: 10px;
+  min-width: 0;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .header-left h2 {
   margin: 0;
   font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-save-btn {
+  flex-shrink: 0;
   padding: 6px 14px;
   font-size: 13px;
   font-family: var(--app-font-family);

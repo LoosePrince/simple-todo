@@ -4,11 +4,30 @@ import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, Save, FolderOpen } from 'lucide-vue-next'
+import { ChevronLeft, FolderOpen } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const settingsStore = useSettingsStore()
 const router = useRouter()
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    settingsStore.saveConfig()
+  }, 300)
+}
+
+/** 主题/语言等会影响全局样式的项：先立即应用，再延迟持久化 */
+function onThemeChange() {
+  settingsStore.applyTheme()
+  scheduleSave()
+}
+function onLanguageChange() {
+  settingsStore.applyI18n()
+  scheduleSave()
+}
 
 const themes = [
   { label: t('settings.themeLight'), value: 'light' },
@@ -26,11 +45,6 @@ const fontFamilies = [
   { label: 'Arial', value: 'Arial' },
   { label: 'Inter', value: 'Inter' }
 ]
-
-const handleSave = async () => {
-  await settingsStore.saveConfig()
-  router.push('/')
-}
 
 const handlePickFolder = async () => {
   try {
@@ -64,49 +78,45 @@ const handlePickFolder = async () => {
 <template>
   <div class="settings-view">
     <div class="header">
+      <h2>{{ t('settings.title') }}</h2>
       <el-button @click="router.back()">
         <ChevronLeft :size="16" style="margin-right: 4px" />
         {{ t('common.back') }}
-      </el-button>
-      <h2>{{ t('settings.title') }}</h2>
-      <el-button type="primary" @click="handleSave">
-        <Save :size="16" style="margin-right: 4px" />
-        {{ t('common.save') }}
       </el-button>
     </div>
 
     <el-form :model="settingsStore.config" label-width="120px">
       <el-form-item :label="t('settings.language')">
-        <el-select v-model="settingsStore.config.language">
+        <el-select v-model="settingsStore.config.language" @change="onLanguageChange">
           <el-option v-for="item in languages" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
       </el-form-item>
 
       <el-form-item :label="t('settings.theme')">
-        <el-radio-group v-model="settingsStore.config.theme">
+        <el-radio-group v-model="settingsStore.config.theme" @change="onThemeChange">
           <el-radio v-for="item in themes" :key="item.value" :label="item.label" :value="item.value">{{ item.label }}</el-radio>
         </el-radio-group>
       </el-form-item>
 
       <el-form-item :label="t('settings.font')">
-        <el-select v-model="settingsStore.config.font_family">
+        <el-select v-model="settingsStore.config.font_family" @change="scheduleSave">
           <el-option v-for="item in fontFamilies" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
       </el-form-item>
 
       <el-form-item :label="t('settings.fontSize')">
-        <el-input-number v-model="settingsStore.config.font_size" :min="12" :max="30" />
+        <el-input-number v-model="settingsStore.config.font_size" :min="12" :max="30" @change="scheduleSave" />
       </el-form-item>
 
       <el-form-item :label="t('settings.textColor')">
         <div class="color-pickers">
           <div class="color-picker-item">
             <span>浅色模式: </span>
-            <el-color-picker v-model="settingsStore.config.text_color_light" />
+            <el-color-picker v-model="settingsStore.config.text_color_light" @change="scheduleSave" />
           </div>
           <div class="color-picker-item">
             <span>深色模式: </span>
-            <el-color-picker v-model="settingsStore.config.text_color_dark" />
+            <el-color-picker v-model="settingsStore.config.text_color_dark" @change="scheduleSave" />
           </div>
         </div>
       </el-form-item>

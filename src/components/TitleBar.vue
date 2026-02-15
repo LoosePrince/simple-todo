@@ -1,8 +1,23 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Minus, Maximize, X } from 'lucide-vue-next'
+import { Pin, Minus, Maximize, X } from 'lucide-vue-next'
 
 const appWindow = getCurrentWindow()
+const pinned = ref(false)
+
+onMounted(async () => {
+  try {
+    pinned.value = await appWindow.isAlwaysOnTop()
+  } catch (_) {}
+})
+
+const togglePin = async () => {
+  try {
+    pinned.value = !pinned.value
+    await appWindow.setAlwaysOnTop(pinned.value)
+  } catch (_) {}
+}
 
 const minimize = () => appWindow.minimize()
 const toggleMaximize = () => appWindow.toggleMaximize()
@@ -13,6 +28,14 @@ const close = () => appWindow.close()
   <div data-tauri-drag-region class="titlebar">
     <div class="title">Tauri Todo App</div>
     <div class="controls">
+      <div
+        class="control-btn pin-btn"
+        :class="{ active: pinned }"
+        title="固定窗口置顶"
+        @click="togglePin"
+      >
+        <Pin :size="14" />
+      </div>
       <div class="control-btn" id="btn-minimize" @click="minimize">
         <Minus :size="14" />
       </div>
@@ -85,5 +108,13 @@ const close = () => appWindow.close()
 .control-btn.close:hover {
   background: #e81123;
   color: white;
+}
+
+.pin-btn.active {
+  color: var(--el-color-primary, #409eff);
+}
+
+.dark .pin-btn.active {
+  color: #58a6ff;
 }
 </style>

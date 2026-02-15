@@ -128,14 +128,16 @@ onBeforeUnmount(() => {
 <style scoped>
 .editor-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 8px 16px;
+  padding: 8px 12px;
   background: var(--app-bg-color);
   border-bottom: 1px solid rgba(0,0,0,0.1);
-  gap: 12px;
+  gap: 8px 12px;
   position: sticky;
   top: 0;
   z-index: 100;
+  min-width: 0;
 }
 
 .dark .editor-toolbar {
@@ -144,13 +146,28 @@ onBeforeUnmount(() => {
 
 .toolbar-group {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .toolbar-divider {
   width: 1px;
   height: 20px;
   background: rgba(0,0,0,0.1);
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .editor-toolbar {
+    padding: 6px 10px;
+    gap: 6px 10px;
+  }
+  .toolbar-style-btn {
+    min-width: 28px;
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
 }
 
 .dark .toolbar-divider {
