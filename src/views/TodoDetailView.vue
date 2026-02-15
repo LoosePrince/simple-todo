@@ -109,6 +109,11 @@ function collectUsedAssetNames(nodes: EditorNode[]): Set<string> {
   return names
 }
 
+function asArrayBuffer(x: ArrayBuffer | Uint8Array): ArrayBuffer {
+  if (x instanceof ArrayBuffer) return x
+  return x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength) as ArrayBuffer
+}
+
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(buf))
@@ -131,8 +136,8 @@ const handleImageUpload = async () => {
     if (!selected || !todoItem) return
     await ensureAssetsDir()
     const filePath = selected as string
-    const arrayBuffer = await readFile(filePath)
-    const hash = await sha256Hex(arrayBuffer)
+    const fileData = await readFile(filePath)
+    const hash = await sha256Hex(asArrayBuffer(fileData))
     const ext = getExt(filePath)
     const targetFileName = `${hash}.${ext}`
     const assetPath = `assets/${targetFileName}`
@@ -141,7 +146,7 @@ const handleImageUpload = async () => {
     try {
       await stat(targetPath)
     } catch {
-      await writeFile(targetPath, arrayBuffer)
+      await writeFile(targetPath, fileData)
     }
     const newBlock: EditorNode = {
       type: 'image',
@@ -209,8 +214,8 @@ const handleFileUpload = async () => {
     await ensureAssetsDir()
     const filePath = selected as string
     const displayName = filePath.split(/[\\/]/).pop() || 'file'
-    const arrayBuffer = await readFile(filePath)
-    const hash = await sha256Hex(arrayBuffer)
+    const fileData = await readFile(filePath)
+    const hash = await sha256Hex(asArrayBuffer(fileData))
     const ext = getExt(filePath)
     const targetFileName = `${hash}.${ext}`
     const assetPath = `assets/${targetFileName}`
@@ -219,14 +224,14 @@ const handleFileUpload = async () => {
     try {
       await stat(targetPath)
     } catch {
-      await writeFile(targetPath, arrayBuffer)
+      await writeFile(targetPath, fileData)
     }
     const newBlock: EditorNode = {
       type: 'file',
       id: crypto.randomUUID(),
       url: convertFileSrc(targetPath),
       fileName: displayName,
-      fileSize: arrayBuffer.byteLength,
+      fileSize: fileData.byteLength,
       assetPath
     }
     const idx = insertAtIndexRef.value
@@ -322,7 +327,7 @@ const handleDrop = async (e: DragEvent) => {
       try {
         await stat(targetPath)
       } catch {
-        await writeFile(targetPath, uint8Array)
+        await writeFile(targetPath, new Uint8Array(arrayBuffer))
       }
       blocks.value.push({
         type: isImage ? 'image' : 'file',

@@ -232,7 +232,7 @@ const domToNodes = (): EditorNode[] => {
       roots.push({ type: tag as 'ul' | 'ol', id, children: listChildren })
     } else if (tag === 'div') {
       const fromDiv = domToNodesFromContainer(child)
-      roots.push(...(fromDiv.length > 0 ? fromDiv : [{ type: 'p', id: genId(), children: [] }]))
+      roots.push(...(fromDiv.length > 0 ? fromDiv : [{ type: 'p' as const, id: genId(), children: [] }]))
     } else if (tag === 'br') {
       roots.push({ type: 'p', id: genId(), children: [] })
     } else {

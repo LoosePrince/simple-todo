@@ -1,2 +1,31 @@
-target
+# Dependencies
 node_modules
+
+# Build output
+dist
+src-tauri/target
+
+# Tauri
+.tauri
+
+# Env / local
+.env
+.env.local
+.env.*.local
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE (optional, 自用可忽略)
+.idea
+*.suo
+*.user
+
+# Vue / Vite
+*.local
