@@ -1,27 +1,53 @@
 {
-  "common": {
-    "save": "保存",
-    "back": "返回",
-    "add": "添加",
-    "delete": "删除",
-    "settings": "设置",
-    "saveSuccess": "保存成功"
-  },
-  "todo": {
-    "listTitle": "代办事项",
-    "placeholder": "添加新的代办事项...",
-    "detailTitle": "代办详情"
-  },
-  "settings": {
-    "title": "设置",
-    "language": "语言",
-    "theme": "主题风格",
-    "themeLight": "浅色",
-    "themeDark": "深色",
-    "font": "字体",
-    "fontSize": "字体大小",
-    "textColor": "文字颜色",
-    "dataPath": "数据保存位置",
-    "selectFolder": "选择"
-  }
+    "common": {
+        "save": "保存",
+        "back": "返回",
+        "add": "添加",
+        "delete": "删除",
+        "settings": "设置",
+        "saveSuccess": "保存成功"
+    },
+    "todo": {
+        "listTitle": "代办事项",
+        "placeholder": "添加新的代办事项...",
+        "detailTitle": "代办详情"
+    },
+    "settings": {
+        "title": "设置",
+        "language": "语言",
+        "theme": "主题风格",
+        "themeLight": "浅色",
+        "themeDark": "深色",
+        "font": "字体",
+        "fontSize": "字体大小",
+        "textColor": "文字颜色",
+        "dataPath": "数据保存位置",
+        "selectFolder": "选择",
+        "launchAtLogin": "开机启动",
+        "launchAtLoginDesc": "开机自启并打开窗口"
+    },
+    "editor": {
+        "toolbarParagraph": "正文",
+        "toolbarHeading1": "标题",
+        "toolbarHeading2": "副标题",
+        "toolbarBold": "加粗",
+        "toolbarItalic": "倾斜",
+        "toolbarList": "列表",
+        "toolbarAlignLeft": "左对齐",
+        "toolbarAlignCenter": "居中",
+        "toolbarAlignRight": "右对齐",
+        "toolbarInsertImage": "插入图片",
+        "toolbarInsertFile": "插入文件",
+        "bubbleBold": "加粗",
+        "bubbleItalic": "斜体",
+        "bubbleColor": "文字颜色"
+    },
+    "contextMenu": {
+        "openFileLocation": "打开文件位置",
+        "saveAs": "另存为...",
+        "openFile": "打开文件",
+        "openLocationError": "打开文件位置失败",
+        "saveAsError": "另存为失败",
+        "openFileError": "打开文件失败"
+    }
 }

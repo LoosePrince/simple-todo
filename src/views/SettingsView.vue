@@ -46,6 +46,17 @@ const fontFamilies = [
   { label: 'Inter', value: 'Inter' }
 ]
 
+async function onLaunchAtLoginChange(enabled: boolean) {
+  try {
+    const { enable, disable } = await import('@tauri-apps/plugin-autostart')
+    if (enabled) await enable()
+    else await disable()
+    scheduleSave()
+  } catch (e) {
+    console.error('Autostart failed:', e)
+  }
+}
+
 const handlePickFolder = async () => {
   try {
     const selected = await open({
@@ -121,6 +132,18 @@ const handlePickFolder = async () => {
         </div>
       </el-form-item>
 
+      <el-form-item :label="t('settings.launchAtLogin')">
+        <div class="launch-at-login-row">
+          <el-switch
+            v-model="settingsStore.config.launch_at_login"
+            :active-value="true"
+            :inactive-value="false"
+            @change="onLaunchAtLoginChange"
+          />
+          <span class="launch-at-login-desc">{{ t('settings.launchAtLoginDesc') }}</span>
+        </div>
+      </el-form-item>
+
       <el-form-item :label="t('settings.dataPath')">
         <el-input v-model="settingsStore.config.data_path" readonly>
           <template #append>
@@ -138,7 +161,7 @@ const handlePickFolder = async () => {
 <style scoped>
 .settings-view {
   padding: 20px;
-  max-width: 800px;
+  max-width: max(600px, 80%);
   margin: 0 auto;
 }
 
@@ -163,6 +186,21 @@ const handlePickFolder = async () => {
 .color-picker-item span {
   font-size: 12px;
   color: #666;
+}
+
+.launch-at-login-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.launch-at-login-desc {
+  font-size: 12px;
+  color: #666;
+}
+
+.dark .launch-at-login-desc {
+  color: #aaa;
 }
 
 .dark .color-picker-item span {

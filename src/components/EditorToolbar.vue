@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Bold, Italic, List, Image as ImageIcon, FilePlus, AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const emit = defineEmits(['command', 'insert-image', 'insert-file', 'mousedown'])
 
 const commands = [
-  { icon: Bold, label: '加粗', cmd: 'bold' },
-  { icon: Italic, label: '倾斜', cmd: 'italic' },
-  { icon: List, label: '列表', cmd: 'insertUnorderedList' },
+  { icon: Bold, key: 'toolbarBold', cmd: 'bold' },
+  { icon: Italic, key: 'toolbarItalic', cmd: 'italic' },
+  { icon: List, key: 'toolbarList', cmd: 'insertUnorderedList' },
 ]
 
 const alignCommands = [
-  { icon: AlignLeft, label: '左对齐', cmd: 'justifyLeft' },
-  { icon: AlignCenter, label: '居中', cmd: 'justifyCenter' },
-  { icon: AlignRight, label: '右对齐', cmd: 'justifyRight' },
+  { icon: AlignLeft, key: 'toolbarAlignLeft', cmd: 'justifyLeft' },
+  { icon: AlignCenter, key: 'toolbarAlignCenter', cmd: 'justifyCenter' },
+  { icon: AlignRight, key: 'toolbarAlignRight', cmd: 'justifyRight' },
 ]
 
 const blockStyles = [
-  { label: 'P', value: 'p', title: '正文' },
-  { label: 'H1', value: 'h1', title: '标题' },
-  { label: 'H2', value: 'h2', title: '副标题' },
+  { label: 'P', value: 'p', key: 'toolbarParagraph' },
+  { label: 'H1', value: 'h1', key: 'toolbarHeading1' },
+  { label: 'H2', value: 'h2', key: 'toolbarHeading2' },
 ]
 
 const bubbleMenuVisible = ref(false)
@@ -63,21 +65,20 @@ onBeforeUnmount(() => {
 <template>
   <div class="editor-toolbar" @mousedown="emit('mousedown')">
     <div class="toolbar-group block-style-btns">
-      <button
-        v-for="b in blockStyles"
-        :key="b.value"
-        type="button"
-        class="toolbar-style-btn"
-        :title="b.title"
-        @mousedown="emit('mousedown')"
-        @click="emit('command', 'formatBlock', b.value)"
-      >{{ b.label }}</button>
+      <el-tooltip v-for="b in blockStyles" :key="b.value" :content="t('editor.' + b.key)" placement="top">
+        <button
+          type="button"
+          class="toolbar-style-btn"
+          @mousedown="emit('mousedown')"
+          @click="emit('command', 'formatBlock', b.value)"
+        >{{ b.label }}</button>
+      </el-tooltip>
     </div>
 
     <div class="toolbar-divider"></div>
 
     <div class="toolbar-group">
-      <el-tooltip v-for="c in commands" :key="c.cmd" :content="c.label" placement="top">
+      <el-tooltip v-for="c in commands" :key="c.cmd" :content="t('editor.' + c.key)" placement="top">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('command', c.cmd)">
           <component :is="c.icon" :size="16" />
         </el-button>
@@ -87,7 +88,7 @@ onBeforeUnmount(() => {
     <div class="toolbar-divider"></div>
 
     <div class="toolbar-group">
-      <el-tooltip v-for="a in alignCommands" :key="a.cmd" :content="a.label" placement="top">
+      <el-tooltip v-for="a in alignCommands" :key="a.cmd" :content="t('editor.' + a.key)" placement="top">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('command', a.cmd)">
           <component :is="a.icon" :size="16" />
         </el-button>
@@ -97,12 +98,16 @@ onBeforeUnmount(() => {
     <div class="toolbar-divider"></div>
 
     <div class="toolbar-group">
-      <el-button circle @click="emit('insert-image')">
-        <ImageIcon :size="16" />
-      </el-button>
-      <el-button circle @click="emit('insert-file')">
-        <FilePlus :size="16" />
-      </el-button>
+      <el-tooltip :content="t('editor.toolbarInsertImage')" placement="top">
+        <el-button circle @click="emit('insert-image')">
+          <ImageIcon :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarInsertFile')" placement="top">
+        <el-button circle @click="emit('insert-file')">
+          <FilePlus :size="16" />
+        </el-button>
+      </el-tooltip>
     </div>
 
     <!-- 选择文本时的浮动小工具栏：mousedown 时保存选区，点击后由父组件恢复选区并执行命令 -->
@@ -113,13 +118,15 @@ onBeforeUnmount(() => {
         :style="{ top: bubbleMenuPos.top + 'px', left: bubbleMenuPos.left + 'px' }"
         @mousedown="emit('mousedown')"
       >
-        <button type="button" class="bubble-btn" title="加粗" @click="emit('command', 'bold')">
+        <button type="button" class="bubble-btn" :title="t('editor.bubbleBold')" @click="emit('command', 'bold')">
           <Bold :size="14" />
         </button>
-        <button type="button" class="bubble-btn" title="斜体" @click="emit('command', 'italic')">
+        <button type="button" class="bubble-btn" :title="t('editor.bubbleItalic')" @click="emit('command', 'italic')">
           <Italic :size="14" />
         </button>
-        <el-color-picker size="small" class="bubble-color" @change="(val: string) => emit('command', 'foreColor', val)" />
+        <el-tooltip :content="t('editor.bubbleColor')" placement="top">
+          <el-color-picker size="small" class="bubble-color" @change="(val: string) => emit('command', 'foreColor', val)" />
+        </el-tooltip>
       </div>
     </Teleport>
   </div>

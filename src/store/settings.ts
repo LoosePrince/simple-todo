@@ -10,6 +10,7 @@ export interface AppConfig {
   font_size: number
   text_color_light: string
   text_color_dark: string
+  launch_at_login?: boolean
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -22,6 +23,7 @@ export const useSettingsStore = defineStore('settings', {
       font_size: 14,
       text_color_light: '#333333',
       text_color_dark: '#e5e5e5',
+      launch_at_login: false,
     } as AppConfig,
   }),
   getters: {
@@ -35,8 +37,18 @@ export const useSettingsStore = defineStore('settings', {
   actions: {
     async loadConfig() {
       this.config = await invoke('get_app_config')
+      if (this.config.launch_at_login == null) this.config.launch_at_login = false
       this.applyI18n()
       this.applyTheme()
+      await this.syncAutostart()
+    },
+    async syncAutostart() {
+      try {
+        const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart')
+        const enabled = await isEnabled()
+        if (this.config.launch_at_login && !enabled) await enable()
+        else if (!this.config.launch_at_login && enabled) await disable()
+      } catch (_) {}
     },
     async saveConfig() {
       await invoke('save_app_config', { config: this.config })

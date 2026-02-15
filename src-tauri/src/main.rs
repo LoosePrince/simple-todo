@@ -24,6 +24,8 @@ struct AppConfig {
     font_size: u32,
     text_color_light: String,
     text_color_dark: String,
+    #[serde(default)]
+    launch_at_login: bool,
 }
 
 fn default_config(handle: &tauri::AppHandle) -> AppConfig {
@@ -35,6 +37,7 @@ fn default_config(handle: &tauri::AppHandle) -> AppConfig {
         font_size: 14,
         text_color_light: "#333333".to_string(),
         text_color_dark: "#e5e5e5".to_string(),
+        launch_at_login: false,
     }
 }
 
@@ -171,6 +174,10 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_app_config,
             save_app_config,

@@ -84,7 +84,7 @@ const goToDetail = (id: string) => {
 <style scoped>
 .todo-list-view {
   padding: 20px;
-  max-width: 600px;
+  max-width: max(600px, 80%);
   margin: 0 auto;
   height: 100%;
   display: flex;

@@ -264,7 +264,7 @@ async function contextMenuOpenLocation() {
     await revealItemInDir(fullPath)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    ElMessage.error(`打开文件位置失败: ${msg}`)
+    ElMessage.error(`${t('contextMenu.openLocationError')}: ${msg}`)
   }
   closeContextMenu()
 }
@@ -285,7 +285,7 @@ async function contextMenuSaveAs() {
     ElMessage.success(t('common.saveSuccess') || '已保存')
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    ElMessage.error(`另存为失败: ${msg}`)
+    ElMessage.error(`${t('contextMenu.saveAsError')}: ${msg}`)
   }
   closeContextMenu()
 }
@@ -298,7 +298,7 @@ async function contextMenuOpenFile() {
     await openPath(fullPath)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    ElMessage.error(`打开文件失败: ${msg}`)
+    ElMessage.error(`${t('contextMenu.openFileError')}: ${msg}`)
   }
   closeContextMenu()
 }
@@ -379,15 +379,15 @@ const handleDrop = async (e: DragEvent) => {
           @click.stop
           @contextmenu.prevent
         >
-          <button type="button" class="context-menu-item" @click="contextMenuOpenLocation">打开文件位置</button>
-          <button type="button" class="context-menu-item" @click="contextMenuSaveAs">另存为...</button>
+          <button type="button" class="context-menu-item" @click="contextMenuOpenLocation">{{ t('contextMenu.openFileLocation') }}</button>
+          <button type="button" class="context-menu-item" @click="contextMenuSaveAs">{{ t('contextMenu.saveAs') }}</button>
           <button
             v-if="contextMenu?.type === 'file'"
             type="button"
             class="context-menu-item"
             @click="contextMenuOpenFile"
           >
-            打开文件
+            {{ t('contextMenu.openFile') }}
           </button>
         </div>
       </div>
@@ -397,7 +397,7 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped>
 .todo-detail-view {
-  max-width: 600px;
+  max-width: max(600px, 80%);
   margin: 0 auto;
   padding: 0;
   width: 100%;

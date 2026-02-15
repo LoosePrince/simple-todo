@@ -33,12 +33,18 @@ onUnmounted(() => {
   --app-font-size: 14px;
   --app-text-color: #333333;
   --app-bg-color: #ffffff;
+  --file-card-bg: rgba(0, 0, 0, 0.05);
+  --file-card-border: rgba(0, 0, 0, 0.1);
+  --file-size-color: rgba(0, 0, 0, 0.5);
 }
 
 /* 强制覆盖深色模式下的基础颜色 */
 html.dark {
   --app-text-color: #e5e5e5;
   --app-bg-color: #1a1a1a;
+  --file-card-bg: rgba(255, 255, 255, 0.08);
+  --file-card-border: rgba(255, 255, 255, 0.15);
+  --file-size-color: rgba(255, 255, 255, 0.6);
   background-color: #1a1a1a;
   color: #e5e5e5;
 }

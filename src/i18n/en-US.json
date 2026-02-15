@@ -1,27 +1,53 @@
 {
-  "common": {
-    "save": "Save",
-    "back": "Back",
-    "add": "Add",
-    "delete": "Delete",
-    "settings": "Settings",
-    "saveSuccess": "Save Success"
-  },
-  "todo": {
-    "listTitle": "Todo List",
-    "placeholder": "Add a new todo...",
-    "detailTitle": "Todo Detail"
-  },
-  "settings": {
-    "title": "Settings",
-    "language": "Language",
-    "theme": "Theme",
-    "themeLight": "Light",
-    "themeDark": "Dark",
-    "font": "Font",
-    "fontSize": "Font Size",
-    "textColor": "Text Color",
-    "dataPath": "Data Storage Path",
-    "selectFolder": "Select"
-  }
+    "common": {
+        "save": "Save",
+        "back": "Back",
+        "add": "Add",
+        "delete": "Delete",
+        "settings": "Settings",
+        "saveSuccess": "Save Success"
+    },
+    "todo": {
+        "listTitle": "Todo List",
+        "placeholder": "Add a new todo...",
+        "detailTitle": "Todo Detail"
+    },
+    "settings": {
+        "title": "Settings",
+        "language": "Language",
+        "theme": "Theme",
+        "themeLight": "Light",
+        "themeDark": "Dark",
+        "font": "Font",
+        "fontSize": "Font Size",
+        "textColor": "Text Color",
+        "dataPath": "Data Storage Path",
+        "selectFolder": "Select",
+        "launchAtLogin": "Launch at login",
+        "launchAtLoginDesc": "Start and open window on system boot"
+    },
+    "editor": {
+        "toolbarParagraph": "Paragraph",
+        "toolbarHeading1": "Heading 1",
+        "toolbarHeading2": "Heading 2",
+        "toolbarBold": "Bold",
+        "toolbarItalic": "Italic",
+        "toolbarList": "List",
+        "toolbarAlignLeft": "Align left",
+        "toolbarAlignCenter": "Center",
+        "toolbarAlignRight": "Align right",
+        "toolbarInsertImage": "Insert image",
+        "toolbarInsertFile": "Insert file",
+        "bubbleBold": "Bold",
+        "bubbleItalic": "Italic",
+        "bubbleColor": "Text color"
+    },
+    "contextMenu": {
+        "openFileLocation": "Open file location",
+        "saveAs": "Save as...",
+        "openFile": "Open file",
+        "openLocationError": "Failed to open file location",
+        "saveAsError": "Save as failed",
+        "openFileError": "Failed to open file"
+    }
 }
