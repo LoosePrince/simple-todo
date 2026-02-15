@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next'
 
 /** 树形节点：类似 HTML 序列化为 JSON，支持子节点，加粗/斜体等内联格式保存在子节点中 */
@@ -66,7 +67,9 @@ const nodeToHtml = (node: EditorNode): string => {
     const url = node.url ?? ''
     const sizeStr = node.fileSize != null ? formatFileSize(node.fileSize) : ''
     const ap = node.assetPath ?? ''
-    return `<span class="editor-block file-block" data-id="${node.id}" data-url="${escapeHtml(url)}" data-file-size="${node.fileSize ?? ''}" data-asset-path="${escapeHtml(ap)}" contenteditable="false" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card"><span class="file-icon">📄</span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span>`
+    const ext = (node.fileName ?? '').split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || ''
+    const extAttr = ext ? ` data-ext="${escapeHtml(ext)}"` : ''
+    return `<span class="editor-block file-block" data-id="${node.id}" data-url="${escapeHtml(url)}" data-file-size="${node.fileSize ?? ''}" data-asset-path="${escapeHtml(ap)}" contenteditable="false" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card"><span class="file-icon"${extAttr}><span class="file-icon-fallback">📄</span><img class="file-icon-img" alt=""></span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span>`
   }
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
   if (node.type === 'em') return `<em>${(node.children || []).map(nodeToHtml).join('')}</em>`
@@ -311,16 +314,46 @@ const handleInput = () => {
 
 const defaultNodes = (): EditorNode[] => [{ type: 'p', id: genId(), children: [] }]
 
+async function updateFileIcons() {
+  const el = editorRef.value
+  if (!el) return
+  const icons = el.querySelectorAll<HTMLElement>('.file-icon[data-ext]')
+  const exts = new Set<string>()
+  icons.forEach(node => {
+    const ext = node.getAttribute('data-ext')
+    if (ext) exts.add(ext)
+  })
+  const cache = new Map<string, string>()
+  for (const ext of exts) {
+    try {
+      const b64 = await invoke<string>('get_file_icon', { extension: ext })
+      if (b64) cache.set(ext, b64)
+    } catch (_) {}
+  }
+  icons.forEach(node => {
+    const ext = node.getAttribute('data-ext')
+    const img = node.querySelector<HTMLImageElement>('.file-icon-img')
+    if (!ext || !img) return
+    const dataUrl = cache.get(ext)
+    if (dataUrl) {
+      img.src = `data:image/png;base64,${dataUrl}`
+      img.style.display = ''
+    }
+  })
+}
+
 onMounted(() => {
   if (!editorRef.value) return
   const nodes = Array.isArray(props.modelValue) && props.modelValue.length > 0 ? props.modelValue : defaultNodes()
   editorRef.value.innerHTML = nodesToHtml(nodes)
+  nextTick(updateFileIcons)
 })
 
 watch(() => props.modelValue, (newVal) => {
   if (!isInternalUpdate.value && editorRef.value) {
     const nodes = Array.isArray(newVal) && newVal.length > 0 ? newVal : defaultNodes()
     editorRef.value.innerHTML = nodesToHtml(nodes)
+    nextTick(updateFileIcons)
   }
 }, { deep: true })
 
@@ -581,7 +614,33 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCur
 }
 
 :deep(.file-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+:deep(.file-icon-fallback) {
   font-size: 20px;
+  line-height: 1;
+}
+
+:deep(.file-icon-img) {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: none;
+}
+
+:deep(.file-icon-img[src]) {
+  display: block;
+}
+
+:deep(.file-icon:has(.file-icon-img[src]) .file-icon-fallback) {
+  display: none;
 }
 
 :deep(.file-name) {

@@ -168,6 +168,50 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
     Ok(())
 }
 
+#[tauri::command]
+fn get_file_icon(extension: String) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        use std::env;
+        use std::io::Write;
+        let ext = extension.trim().to_lowercase();
+        if ext.is_empty() {
+            return Ok(String::new());
+        }
+        let safe_ext: String = ext
+            .chars()
+            .take(20)
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '.')
+            .collect();
+        if safe_ext.is_empty() {
+            return Ok(String::new());
+        }
+        let dummy_path = env::temp_dir().join(format!("tauri_icon_dummy.{}", safe_ext));
+        let path_str = dummy_path.to_str().unwrap_or("");
+        let created = if !dummy_path.exists() {
+            fs::File::create(&dummy_path).ok().map(|mut f| {
+                let _ = f.write_all(b"");
+                true
+            })
+        } else {
+            Some(true)
+        };
+        let result = windows_icons::get_icon_base64_by_path(path_str);
+        if created == Some(true) && dummy_path.exists() {
+            let _ = fs::remove_file(&dummy_path);
+        }
+        match result {
+            Ok(b64) => Ok(b64),
+            Err(_) => Ok(String::new()),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = extension;
+        Ok(String::new())
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -186,7 +230,8 @@ fn main() {
             create_todo_folder,
             save_todo_detail,
             get_todo_detail,
-            move_data
+            move_data,
+            get_file_icon
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

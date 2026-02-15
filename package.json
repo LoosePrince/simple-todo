@@ -1,5 +1,5 @@
 {
-  "name": "tauri-todo-app",
+  "name": "simple-todo",
   "private": true,
   "version": "0.0.0",
   "type": "module",

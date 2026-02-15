@@ -26,14 +26,9 @@ const close = () => appWindow.close()
 
 <template>
   <div data-tauri-drag-region class="titlebar">
-    <div class="title">Tauri Todo App</div>
+    <div class="title">简易代办</div>
     <div class="controls">
-      <div
-        class="control-btn pin-btn"
-        :class="{ active: pinned }"
-        title="固定窗口置顶"
-        @click="togglePin"
-      >
+      <div class="control-btn pin-btn" :class="{ active: pinned }" @click="togglePin">
         <Pin :size="14" />
       </div>
       <div class="control-btn" id="btn-minimize" @click="minimize">
