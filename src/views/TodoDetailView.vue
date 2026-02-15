@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useTodoStore } from '../store/todo'
 import { useSettingsStore } from '../store/settings'
 import { invoke } from '@tauri-apps/api/core'
-import { readFile, writeFile, mkdir } from '@tauri-apps/plugin-fs'
+import { readFile, writeFile, mkdir, stat, readDir, remove } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -24,6 +24,8 @@ const todoItem = todoStore.todos.find(t => t.id === todoId)
 
 const blocks = ref<EditorNode[]>([])
 const editorRef = ref<InstanceType<typeof AdvancedEditor> | null>(null)
+/** 在工具栏按下时保存的光标所在块索引，插入图片/文件时在此位置后插入，用后置 -1 */
+const insertAtIndexRef = ref(-1)
 
 onMounted(async () => {
   if (!todoItem) {
@@ -43,11 +45,117 @@ onMounted(async () => {
   if (blocks.value.length === 0) {
     blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
   }
+  await backfillFileSizes()
 })
+
+async function backfillFileSizes() {
+  if (!todoItem) return
+  const base = await join(settingsStore.config.data_path, todoItem.folder_name)
+  const list: EditorNode[] = []
+  for (const node of blocks.value) {
+    if (node.type === 'file' && node.assetPath && (node.fileSize == null || node.fileSize === 0)) {
+      try {
+        const fullPath = await join(base, node.assetPath)
+        const info = await stat(fullPath)
+        list.push({ ...node, fileSize: info.size })
+      } catch {
+        list.push(node)
+      }
+    } else {
+      list.push(node)
+    }
+  }
+  blocks.value = list
+}
+
+function collectUsedAssetNames(nodes: EditorNode[]): Set<string> {
+  const names = new Set<string>()
+  for (const node of nodes) {
+    if (node.type !== 'image' && node.type !== 'file') continue
+    if (node.assetPath) {
+      const name = node.assetPath.split(/[/\\]/).pop()
+      if (name) names.add(name)
+    }
+    if (node.url) {
+      try {
+        const segs = decodeURIComponent(node.url).split(/[/\\]/)
+        if (segs.length) names.add(segs[segs.length - 1])
+      } catch (_) {}
+    }
+  }
+  return names
+}
+
+async function sha256Hex(data: ArrayBuffer): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16)
+}
+
+function getExt(pathOrName: string): string {
+  const m = pathOrName.match(/\.([a-zA-Z0-9]+)$/)
+  return m ? m[1].toLowerCase() : 'bin'
+}
+
+const handleImageUpload = async () => {
+  try {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+    })
+    if (!selected || !todoItem) return
+    await ensureAssetsDir()
+    const filePath = selected as string
+    const arrayBuffer = await readFile(filePath)
+    const hash = await sha256Hex(arrayBuffer)
+    const ext = getExt(filePath)
+    const targetFileName = `${hash}.${ext}`
+    const assetPath = `assets/${targetFileName}`
+    const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
+    const targetPath = await join(assetsDir, targetFileName)
+    try {
+      await stat(targetPath)
+    } catch {
+      await writeFile(targetPath, arrayBuffer)
+    }
+    const newBlock: EditorNode = {
+      type: 'image',
+      id: crypto.randomUUID(),
+      url: convertFileSrc(targetPath),
+      assetPath,
+      widthPercent: 100,
+      align: 'left'
+    }
+    const idx = insertAtIndexRef.value
+    if (idx >= 0) {
+      blocks.value = [...blocks.value.slice(0, idx + 1), newBlock, ...blocks.value.slice(idx + 1)]
+      insertAtIndexRef.value = -1
+    } else {
+      blocks.value.push(newBlock)
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    ElMessage.error(`上传失败: ${msg}`)
+  }
+}
 
 const saveDetail = async () => {
   if (!todoItem) return
   if (editorRef.value) editorRef.value.handleInput()
+  const used = collectUsedAssetNames(blocks.value)
+  const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
+  try {
+    const entries = await readDir(assetsDir)
+    for (const entry of entries) {
+      if (entry.isFile && entry.name && !used.has(entry.name)) {
+        try {
+          await remove(await join(assetsDir, entry.name))
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
   await invoke('save_todo_detail', {
     dataPath: settingsStore.config.data_path,
     folderName: todoItem.folder_name,
@@ -58,6 +166,7 @@ const saveDetail = async () => {
 
 const onToolbarMouseDown = () => {
   editorRef.value?.saveSelection?.()
+  insertAtIndexRef.value = editorRef.value?.getCursorBlockIndex?.() ?? -1
 }
 
 const handleCommand = (cmd: string, val?: string) => {
@@ -70,47 +179,40 @@ async function ensureAssetsDir() {
   await mkdir(assetsDir, { recursive: true })
 }
 
-const handleImageUpload = async () => {
-  try {
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
-    })
-    if (!selected || !todoItem) return
-    await ensureAssetsDir()
-    const filePath = selected as string
-    const fileName = `${Date.now()}-${filePath.split(/[\\/]/).pop()}`
-    const arrayBuffer = await readFile(filePath)
-    const targetPath = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets', fileName)
-    await writeFile(targetPath, arrayBuffer)
-    blocks.value.push({
-      type: 'image',
-      id: crypto.randomUUID(),
-      url: convertFileSrc(targetPath)
-    })
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    ElMessage.error(`上传失败: ${msg}`)
-  }
-}
-
 const handleFileUpload = async () => {
   try {
     const selected = await open({ multiple: false })
     if (!selected || !todoItem) return
     await ensureAssetsDir()
     const filePath = selected as string
-    const fileName = filePath.split(/[\\/]/).pop() || 'file'
-    const targetFileName = `${Date.now()}-${fileName}`
+    const displayName = filePath.split(/[\\/]/).pop() || 'file'
     const arrayBuffer = await readFile(filePath)
-    const targetPath = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets', targetFileName)
-    await writeFile(targetPath, arrayBuffer)
-    blocks.value.push({
+    const hash = await sha256Hex(arrayBuffer)
+    const ext = getExt(filePath)
+    const targetFileName = `${hash}.${ext}`
+    const assetPath = `assets/${targetFileName}`
+    const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
+    const targetPath = await join(assetsDir, targetFileName)
+    try {
+      await stat(targetPath)
+    } catch {
+      await writeFile(targetPath, arrayBuffer)
+    }
+    const newBlock: EditorNode = {
       type: 'file',
       id: crypto.randomUUID(),
       url: convertFileSrc(targetPath),
-      fileName
-    })
+      fileName: displayName,
+      fileSize: arrayBuffer.byteLength,
+      assetPath
+    }
+    const idx = insertAtIndexRef.value
+    if (idx >= 0) {
+      blocks.value = [...blocks.value.slice(0, idx + 1), newBlock, ...blocks.value.slice(idx + 1)]
+      insertAtIndexRef.value = -1
+    } else {
+      blocks.value.push(newBlock)
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     ElMessage.error(`上传失败: ${msg}`)
@@ -123,18 +225,28 @@ const handleDrop = async (e: DragEvent) => {
   if (!files?.length || !todoItem) return
   try {
     await ensureAssetsDir()
+    const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
     for (const file of Array.from(files)) {
       const arrayBuffer = await file.arrayBuffer()
       const uint8Array = new Uint8Array(arrayBuffer)
-      const fileName = `${Date.now()}-${file.name}`
-      const targetPath = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets', fileName)
-      await writeFile(targetPath, uint8Array)
+      const hash = await sha256Hex(arrayBuffer)
+      const ext = getExt(file.name)
       const isImage = file.type.startsWith('image/')
+      const targetFileName = `${hash}.${ext}`
+      const assetPath = `assets/${targetFileName}`
+      const targetPath = await join(assetsDir, targetFileName)
+      try {
+        await stat(targetPath)
+      } catch {
+        await writeFile(targetPath, uint8Array)
+      }
       blocks.value.push({
         type: isImage ? 'image' : 'file',
         id: crypto.randomUUID(),
         url: convertFileSrc(targetPath),
-        fileName: isImage ? undefined : file.name
+        assetPath,
+        fileName: isImage ? undefined : file.name,
+        ...(isImage ? { widthPercent: 100, align: 'left' as const } : { fileSize: file.size })
       })
     }
   } catch (err) {

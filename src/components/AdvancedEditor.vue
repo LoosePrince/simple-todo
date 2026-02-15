@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next'
 
 /** 树形节点：类似 HTML 序列化为 JSON，支持子节点，加粗/斜体等内联格式保存在子节点中 */
 export type EditorNode =
@@ -12,8 +13,8 @@ export type EditorNode =
   | { type: 'ul'; id?: string; children: EditorNode[] }
   | { type: 'ol'; id?: string; children: EditorNode[] }
   | { type: 'li'; id?: string; children: EditorNode[] }
-  | { type: 'image'; id: string; url: string }
-  | { type: 'file'; id: string; url: string; fileName?: string }
+  | { type: 'image'; id: string; url: string; assetPath?: string; widthPercent?: number; align?: 'left' | 'center' | 'right' }
+  | { type: 'file'; id: string; url: string; fileName?: string; fileSize?: number; assetPath?: string }
 
 const props = defineProps<{
   modelValue: EditorNode[]
@@ -23,6 +24,14 @@ const emit = defineEmits(['update:modelValue', 'upload-image', 'upload-file'])
 
 const editorRef = ref<HTMLDivElement | null>(null)
 const isInternalUpdate = ref(false)
+/** 选区在编辑器内时更新的“光标所在块”索引，用于失焦后仍能在该位置插入 */
+const lastCursorBlockIndex = ref(-1)
+const selectedImageId = ref<string | null>(null)
+const selectedImageRect = ref({ top: 0, left: 0 })
+const imageToolbarRef = ref<HTMLElement | null>(null)
+const IMAGE_TOOLBAR_APPROX_HEIGHT = 44
+const IMAGE_TOOLBAR_APPROX_WIDTH = 220
+const IMAGE_TOOLBAR_PADDING = 8
 
 const genId = () => crypto.randomUUID()
 
@@ -32,18 +41,27 @@ const escapeHtml = (text: string) => {
   return div.innerHTML
 }
 
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 // 树形节点转 HTML
 const nodeToHtml = (node: EditorNode): string => {
   if (node.type === 'text') return escapeHtml(node.value)
   if (node.type === 'image') {
-    return `<img class="editor-block image-block" data-id="${node.id}" src="${node.url}" style="max-width: 100%; display: inline-block; vertical-align: middle; margin: 5px;" onerror="console.error('Image load failed:', this.src)" />`
+    const w = node.widthPercent ?? 100
+    const align = node.align ?? 'left'
+    const ap = node.assetPath ?? ''
+    return `<span class="image-block-wrapper editor-block" data-id="${node.id}" data-align="${align}" data-width-percent="${w}" data-asset-path="${escapeHtml(ap)}" style="display: block; text-align: ${align}; margin: 8px 0;"><img class="image-block" data-id="${node.id}" data-width-percent="${w}" data-align="${align}" data-asset-path="${escapeHtml(ap)}" src="${node.url}" style="width: ${w}%; max-width: 100%; display: inline-block; vertical-align: middle; border-radius: 8px; cursor: pointer;" onerror="console.error('Image load failed:', this.src)" /></span>`
   }
   if (node.type === 'file') {
     const name = escapeHtml(node.fileName ?? '')
     const url = node.url ?? ''
-    return `<span class="editor-block file-block" data-id="${node.id}" data-url="${escapeHtml(url)}" contenteditable="false" style="display: inline-block; vertical-align: middle; margin: 5px;">
-      <span class="file-card"><span class="file-icon">📄</span><span class="file-name">${name}</span></span>
-    </span>`
+    const sizeStr = node.fileSize != null ? formatFileSize(node.fileSize) : ''
+    const ap = node.assetPath ?? ''
+    return `<span class="editor-block file-block" data-id="${node.id}" data-url="${escapeHtml(url)}" data-file-size="${node.fileSize ?? ''}" data-asset-path="${escapeHtml(ap)}" contenteditable="false" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card"><span class="file-icon">📄</span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span>`
   }
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
   if (node.type === 'em') return `<em>${(node.children || []).map(nodeToHtml).join('')}</em>`
@@ -78,12 +96,41 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
     const tag = child.tagName.toLowerCase()
     const id = child.getAttribute('data-id') ?? genId()
 
-    if (tag === 'img') {
-      out.push({ type: 'image', id, url: (child as HTMLImageElement).src })
+    if (child.classList.contains('image-block-wrapper')) {
+      const img = child.querySelector('img.image-block')
+      if (img) {
+        const mid = img.getAttribute('data-id') ?? id
+        const url = (img as HTMLImageElement).src
+        const wp = img.getAttribute('data-width-percent')
+        const al = img.getAttribute('data-align')
+        const ap = img.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
+        out.push({
+          type: 'image',
+          id: mid,
+          url,
+          assetPath: ap || undefined,
+          widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
+          align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
+        })
+      }
+    } else if (tag === 'img') {
+      const wp = child.getAttribute('data-width-percent')
+      const al = child.getAttribute('data-align')
+      const ap = child.getAttribute('data-asset-path') ?? ''
+      out.push({
+        type: 'image',
+        id,
+        url: (child as HTMLImageElement).src,
+        assetPath: ap || undefined,
+        widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
+        align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
+      })
     } else if (child.classList.contains('file-block')) {
       const name = child.querySelector('.file-name')?.textContent ?? ''
       const url = child.getAttribute('data-url') ?? ''
-      out.push({ type: 'file', id, url, fileName: name })
+      const fs = child.getAttribute('data-file-size')
+      const ap = child.getAttribute('data-asset-path') ?? ''
+      out.push({ type: 'file', id, url, fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
     } else if (tag === 'strong' || tag === 'b') {
       out.push({ type: 'strong', children: collectChildren(child) })
     } else if (tag === 'em' || tag === 'i') {
@@ -131,12 +178,41 @@ const domToNodes = (): EditorNode[] => {
     const tag = child.tagName.toLowerCase()
     const id = child.getAttribute('data-id') ?? genId()
 
-    if (tag === 'img') {
-      roots.push({ type: 'image', id, url: (child as HTMLImageElement).src })
+    if (child.classList.contains('image-block-wrapper')) {
+      const img = child.querySelector('img.image-block')
+      if (img) {
+        const mid = img.getAttribute('data-id') ?? id
+        const url = (img as HTMLImageElement).src
+        const wp = img.getAttribute('data-width-percent')
+        const al = img.getAttribute('data-align')
+        const ap = img.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
+        roots.push({
+          type: 'image',
+          id: mid,
+          url,
+          assetPath: ap || undefined,
+          widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
+          align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
+        })
+      }
+    } else if (tag === 'img') {
+      const wp = child.getAttribute('data-width-percent')
+      const al = child.getAttribute('data-align')
+      const ap = child.getAttribute('data-asset-path') ?? ''
+      roots.push({
+        type: 'image',
+        id,
+        url: (child as HTMLImageElement).src,
+        assetPath: ap || undefined,
+        widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
+        align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
+      })
     } else if (child.classList.contains('file-block')) {
       const name = child.querySelector('.file-name')?.textContent ?? ''
       const url = child.getAttribute('data-url') ?? ''
-      roots.push({ type: 'file', id, url, fileName: name })
+      const fs = child.getAttribute('data-file-size')
+      const ap = child.getAttribute('data-asset-path') ?? ''
+      roots.push({ type: 'file', id, url, fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
     } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
       roots.push({ type: tag as 'p' | 'h1' | 'h2', id, children: collectChildren(child) })
     } else if (tag === 'ul' || tag === 'ol') {
@@ -169,10 +245,40 @@ function domToNodesFromContainer(div: HTMLElement): EditorNode[] {
       const el = node as HTMLElement
       const tag = el.tagName.toLowerCase()
       const id = el.getAttribute('data-id') ?? genId()
-      if (tag === 'img') roots.push({ type: 'image', id, url: (el as HTMLImageElement).src })
-      else if (el.classList.contains('file-block')) {
+      if (el.classList.contains('image-block-wrapper')) {
+        const img = el.querySelector('img.image-block')
+        if (img) {
+          const mid = img.getAttribute('data-id') ?? id
+          const url = (img as HTMLImageElement).src
+          const wp = img.getAttribute('data-width-percent')
+          const al = img.getAttribute('data-align')
+          const ap = img.getAttribute('data-asset-path') ?? el.getAttribute('data-asset-path') ?? ''
+          roots.push({
+            type: 'image',
+            id: mid,
+            url,
+            assetPath: ap || undefined,
+            widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
+            align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
+          })
+        }
+      } else if (tag === 'img') {
+        const wp = el.getAttribute('data-width-percent')
+        const al = el.getAttribute('data-align')
+        const ap = el.getAttribute('data-asset-path') ?? ''
+        roots.push({
+          type: 'image',
+          id,
+          url: (el as HTMLImageElement).src,
+          assetPath: ap || undefined,
+          widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
+          align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
+        })
+      } else if (el.classList.contains('file-block')) {
         const name = el.querySelector('.file-name')?.textContent ?? ''
-        roots.push({ type: 'file', id, url: el.getAttribute('data-url') ?? '', fileName: name })
+        const fs = el.getAttribute('data-file-size')
+        const ap = el.getAttribute('data-asset-path') ?? ''
+        roots.push({ type: 'file', id, url: el.getAttribute('data-url') ?? '', fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
       } else if (tag === 'p' || tag === 'h1' || tag === 'h2') roots.push({ type: tag as 'p' | 'h1' | 'h2', id, children: collectChildren(el) })
       else if (tag === 'ul' || tag === 'ol') {
         const listChildren: EditorNode[] = []
@@ -239,13 +345,97 @@ const execCommand = (command: string, value?: string) => {
   restoreSelection()
   if (command === 'formatBlock' && value) {
     document.execCommand('formatBlock', false, value)
+  } else if (command === 'justifyLeft' || command === 'justifyCenter' || command === 'justifyRight') {
+    document.execCommand(command, false)
   } else {
     document.execCommand(command, false, value)
   }
   handleInput()
 }
 
-defineExpose({ execCommand, handleInput, saveSelection, restoreSelection })
+const selectedImageNode = computed(() => {
+  if (!selectedImageId.value || !Array.isArray(props.modelValue)) return null
+  return props.modelValue.find((n): n is EditorNode & { type: 'image' } => n.type === 'image' && (n as { id?: string }).id === selectedImageId.value) ?? null
+})
+
+function onEditorClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.image-toolbar-root')) return
+  if (target.classList.contains('image-block') || target.closest('.image-block-wrapper')) {
+    const wrapper = target.closest('.image-block-wrapper') as HTMLElement | null
+    const img = (wrapper?.querySelector('img.image-block') ?? target) as HTMLElement
+    const id = img?.getAttribute('data-id') ?? null
+    if (id) {
+      selectedImageId.value = id
+      const rect = img.getBoundingClientRect()
+      let top: number
+      if (rect.top - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
+        top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
+      } else {
+        top = rect.top + window.scrollY - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+      }
+      let left = rect.left + rect.width / 2 - IMAGE_TOOLBAR_APPROX_WIDTH / 2
+      left += window.scrollX
+      left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - IMAGE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+      selectedImageRect.value = { top, left }
+    }
+    return
+  }
+  selectedImageId.value = null
+}
+
+function updateImageNode(updates: { widthPercent?: number; align?: 'left' | 'center' | 'right' }) {
+  if (!selectedImageId.value || !Array.isArray(props.modelValue)) return
+  const next = props.modelValue.map(node => {
+    if (node.type !== 'image' || node.id !== selectedImageId.value) return node
+    return { ...node, ...updates }
+  })
+  emit('update:modelValue', next)
+  // 直接同步 DOM，否则 watch 可能因 v-model 更新时机导致不重绘
+  if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(next)
+}
+
+function computeCursorBlockIndex(): number {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !editorRef.value) return -1
+  let node: Node | null = sel.anchorNode
+  if (!node) return -1
+  while (node && node.parentNode !== editorRef.value) node = node.parentNode
+  if (!node) return -1
+  const children = editorRef.value.childNodes
+  for (let i = 0; i < children.length; i++) {
+    if (children[i] === node) return i
+  }
+  return -1
+}
+
+/** 获取当前光标所在的根级块索引；若已失焦则返回上次记录的索引。 */
+function getCursorBlockIndex(): number {
+  const current = computeCursorBlockIndex()
+  if (current >= 0) {
+    lastCursorBlockIndex.value = current
+    return current
+  }
+  return lastCursorBlockIndex.value
+}
+
+function selectionChangeHandler() {
+  if (!editorRef.value) return
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  const anchor = sel.anchorNode
+  if (!anchor || !editorRef.value.contains(anchor)) return
+  const idx = computeCursorBlockIndex()
+  if (idx >= 0) lastCursorBlockIndex.value = idx
+}
+onMounted(() => {
+  document.addEventListener('selectionchange', selectionChangeHandler)
+})
+onUnmounted(() => {
+  document.removeEventListener('selectionchange', selectionChangeHandler)
+})
+
+defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCursorBlockIndex })
 </script>
 
 <template>
@@ -256,7 +446,35 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection })
       contenteditable="true"
       @input="handleInput"
       @keydown.enter="handleInput"
+      @click="onEditorClick"
     ></div>
+    <Teleport to="body">
+      <div
+        v-if="selectedImageId && selectedImageNode"
+        ref="imageToolbarRef"
+        class="image-toolbar-root image-toolbar"
+        :style="{ top: selectedImageRect.top + 'px', left: selectedImageRect.left + 'px' }"
+      >
+        <label class="image-toolbar-label">宽度%</label>
+        <input
+          type="number"
+          class="image-toolbar-input"
+          min="10"
+          max="100"
+          :value="selectedImageNode.widthPercent ?? 100"
+          @change="(e) => updateImageNode({ widthPercent: Math.min(100, Math.max(10, Number((e.target as HTMLInputElement).value) || 100)) })"
+        />
+        <button type="button" class="image-toolbar-btn" title="左对齐" @click="updateImageNode({ align: 'left' })">
+          <AlignLeft :size="16" />
+        </button>
+        <button type="button" class="image-toolbar-btn" title="居中" @click="updateImageNode({ align: 'center' })">
+          <AlignCenter :size="16" />
+        </button>
+        <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })">
+          <AlignRight :size="16" />
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -312,7 +530,7 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection })
 }
 
 :deep(.file-block) {
-  margin: 5px;
+  margin: 0 5px;
   cursor: default;
   display: inline-block;
   vertical-align: middle;
@@ -339,5 +557,78 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection })
 
 :deep(.file-name) {
   font-size: 14px;
+}
+
+:deep(.file-size) {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.5);
+  margin-left: 6px;
+}
+
+.dark :deep(.file-size) {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.image-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--app-bg-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+.dark .image-toolbar {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(30, 30, 30, 0.95);
+}
+
+.image-toolbar-label {
+  font-size: 12px;
+  color: var(--app-text-color);
+  white-space: nowrap;
+}
+
+.image-toolbar-input {
+  width: 52px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: var(--app-font-family);
+  color: var(--app-text-color);
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.dark .image-toolbar-input {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.image-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--app-text-color);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.image-toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dark .image-toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 </style>

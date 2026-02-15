@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { Bold, Italic, List, Image as ImageIcon, FilePlus } from 'lucide-vue-next'
+import { Bold, Italic, List, Image as ImageIcon, FilePlus, AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next'
 
 const emit = defineEmits(['command', 'insert-image', 'insert-file', 'mousedown'])
 
@@ -8,6 +8,12 @@ const commands = [
   { icon: Bold, label: '加粗', cmd: 'bold' },
   { icon: Italic, label: '倾斜', cmd: 'italic' },
   { icon: List, label: '列表', cmd: 'insertUnorderedList' },
+]
+
+const alignCommands = [
+  { icon: AlignLeft, label: '左对齐', cmd: 'justifyLeft' },
+  { icon: AlignCenter, label: '居中', cmd: 'justifyCenter' },
+  { icon: AlignRight, label: '右对齐', cmd: 'justifyRight' },
 ]
 
 const blockStyles = [
@@ -74,6 +80,16 @@ onBeforeUnmount(() => {
       <el-tooltip v-for="c in commands" :key="c.cmd" :content="c.label" placement="top">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('command', c.cmd)">
           <component :is="c.icon" :size="16" />
+        </el-button>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <div class="toolbar-group">
+      <el-tooltip v-for="a in alignCommands" :key="a.cmd" :content="a.label" placement="top">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('command', a.cmd)">
+          <component :is="a.icon" :size="16" />
         </el-button>
       </el-tooltip>
     </div>
