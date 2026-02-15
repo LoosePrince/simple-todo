@@ -1,0 +1,26 @@
+{
+  "common": {
+    "save": "保存",
+    "back": "返回",
+    "add": "添加",
+    "delete": "删除",
+    "settings": "设置"
+  },
+  "todo": {
+    "listTitle": "代办事项",
+    "placeholder": "添加新的代办事项...",
+    "detailTitle": "代办详情"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "theme": "主题风格",
+    "themeLight": "浅色",
+    "themeDark": "深色",
+    "font": "字体",
+    "fontSize": "字体大小",
+    "textColor": "文字颜色",
+    "dataPath": "数据保存位置",
+    "selectFolder": "选择"
+  }
+}

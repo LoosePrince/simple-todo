@@ -1,0 +1,14 @@
+{
+  "identifier": "fs-capability",
+  "description": "Allow reading and writing files for todo data and user-selected paths.",
+  "windows": ["main"],
+  "permissions": [
+    "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file","fs:allow-mkdir",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "**" }]
+    }
+  ]
+}

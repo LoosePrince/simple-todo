@@ -1,0 +1,26 @@
+{
+  "common": {
+    "save": "Save",
+    "back": "Back",
+    "add": "Add",
+    "delete": "Delete",
+    "settings": "Settings"
+  },
+  "todo": {
+    "listTitle": "Todo List",
+    "placeholder": "Add a new todo...",
+    "detailTitle": "Todo Detail"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "font": "Font",
+    "fontSize": "Font Size",
+    "textColor": "Text Color",
+    "dataPath": "Data Storage Path",
+    "selectFolder": "Select"
+  }
+}
