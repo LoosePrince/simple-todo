@@ -1,0 +1,12 @@
+{
+  "identifier": "opener-capability",
+  "description": "Allow opening files in default app and revealing in file explorer.",
+  "windows": ["main"],
+  "permissions": [
+    "opener:allow-reveal-item-in-dir",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "**" }]
+    }
+  ]
+}

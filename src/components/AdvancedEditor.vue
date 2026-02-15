@@ -20,7 +20,12 @@ const props = defineProps<{
   modelValue: EditorNode[]
 }>()
 
-const emit = defineEmits(['update:modelValue', 'upload-image', 'upload-file'])
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: EditorNode[]): void
+  (e: 'upload-image'): void
+  (e: 'upload-file'): void
+  (e: 'contextmenu', payload: { type: 'image' | 'file'; assetPath: string; id: string; clientX: number; clientY: number }): void
+}>()
 
 const editorRef = ref<HTMLDivElement | null>(null)
 const isInternalUpdate = ref(false)
@@ -384,6 +389,33 @@ function onEditorClick(e: MouseEvent) {
   selectedImageId.value = null
 }
 
+function onEditorContextMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.image-toolbar-root')) return
+  if (target.classList.contains('image-block') || target.closest('.image-block-wrapper')) {
+    const wrapper = target.closest('.image-block-wrapper') as HTMLElement | null
+    const el = (wrapper ?? target) as HTMLElement
+    const assetPath = el.getAttribute('data-asset-path') ?? ''
+    const id = el.getAttribute('data-id') ?? ''
+    if (assetPath) {
+      e.preventDefault()
+      emit('contextmenu', { type: 'image', assetPath, id, clientX: e.clientX, clientY: e.clientY })
+    }
+    return
+  }
+  if (target.classList.contains('file-block') || target.closest('.file-block')) {
+    const el = target.closest('.file-block') as HTMLElement
+    if (el) {
+      const assetPath = el.getAttribute('data-asset-path') ?? ''
+      const id = el.getAttribute('data-id') ?? ''
+      if (assetPath) {
+        e.preventDefault()
+        emit('contextmenu', { type: 'file', assetPath, id, clientX: e.clientX, clientY: e.clientY })
+      }
+    }
+  }
+}
+
 function updateImageNode(updates: { widthPercent?: number; align?: 'left' | 'center' | 'right' }) {
   if (!selectedImageId.value || !Array.isArray(props.modelValue)) return
   const next = props.modelValue.map(node => {
@@ -447,6 +479,7 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCur
       @input="handleInput"
       @keydown.enter="handleInput"
       @click="onEditorClick"
+      @contextmenu="onEditorContextMenu"
     ></div>
     <Teleport to="body">
       <div

@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from './store/settings'
 import TitleBar from './components/TitleBar.vue'
 
 const settingsStore = useSettingsStore()
 
+function preventContextMenu(e: Event) {
+  e.preventDefault()
+}
+
 onMounted(() => {
   settingsStore.applySettings()
+  document.addEventListener('contextmenu', preventContextMenu)
+})
+onUnmounted(() => {
+  document.removeEventListener('contextmenu', preventContextMenu)
 })
 </script>
 
