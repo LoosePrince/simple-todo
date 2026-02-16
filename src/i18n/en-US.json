@@ -4,6 +4,8 @@
         "back": "Back",
         "add": "Add",
         "delete": "Delete",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
         "settings": "Settings",
         "about": "About",
         "saveSuccess": "Save Success"
@@ -14,7 +16,10 @@
         "detailTitle": "Todo Detail",
         "taskProgress": "Task progress",
         "taskLoadError": "Failed to load tasks",
-        "taskSaveError": "Save failed"
+        "taskSaveError": "Save failed",
+        "deleteConfirmTitle": "Delete confirmation",
+        "deleteConfirmMessage": "Are you sure to delete todo \"{title}\"?",
+        "deleteSuccess": "Deleted successfully"
     },
     "detail": {
         "saved": "Saved",

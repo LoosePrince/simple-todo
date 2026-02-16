@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Info, Plus, Settings, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -118,6 +118,26 @@ const handleAddTodo = async () => {
   if (newTodoTitle.value.trim()) {
     await todoStore.addTodo(newTodoTitle.value)
     newTodoTitle.value = ''
+  }
+}
+
+const confirmDeleteTodo = async (id: string, title: string) => {
+  try {
+    await ElMessageBox.confirm(
+      t('todo.deleteConfirmMessage', { title }),
+      t('todo.deleteConfirmTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
+        closeOnClickModal: false,
+        closeOnPressEscape: false
+      }
+    )
+    await todoStore.deleteTodo(id)
+    ElMessage.success(t('todo.deleteSuccess'))
+  } catch {
+    // 用户取消或关闭弹窗，不做处理
   }
 }
 
@@ -243,7 +263,7 @@ function closeTaskPopup() {
           type="danger"
           circle
           size="small"
-          @click="todoStore.deleteTodo(item.id)"
+          @click="confirmDeleteTodo(item.id, item.title)"
         >
           <Trash2 :size="14" />
         </el-button>
