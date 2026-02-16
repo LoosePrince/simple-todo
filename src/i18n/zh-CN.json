@@ -42,6 +42,9 @@
         "bubbleItalic": "斜体",
         "bubbleColor": "文字颜色"
     },
+    "titleBar": {
+        "newWindow": "新窗口"
+    },
     "contextMenu": {
         "openFileLocation": "打开文件位置",
         "saveAs": "另存为...",

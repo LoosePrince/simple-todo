@@ -1,7 +1,7 @@
 {
   "identifier": "window-controls",
   "description": "Allow basic window operations and path utilities for the main window.",
-  "windows": ["main"],
+  "windows": ["main", "main-*"],
   "permissions": [
     "core:window:default",
     "core:window:allow-minimize",
@@ -12,6 +12,7 @@
     "core:window:allow-is-always-on-top",
     "core:path:default",
     "core:path:allow-join",
-    "core:event:default"
+    "core:event:default",
+    "core:webview:allow-create-webview-window"
   ]
 }

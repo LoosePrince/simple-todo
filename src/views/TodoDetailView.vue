@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTodoStore } from '../store/todo'
 import { useSettingsStore } from '../store/settings'
@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n'
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { convertFileSrc } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import AdvancedEditor, { type EditorNode } from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 
@@ -50,11 +51,8 @@ watch(contextMenu, (val) => {
   })
 })
 
-onMounted(async () => {
-  if (!todoItem) {
-    router.push('/')
-    return
-  }
+async function loadDetail() {
+  if (!todoItem) return
   const content = await invoke<string>('get_todo_detail', {
     dataPath: settingsStore.config.data_path,
     folderName: todoItem.folder_name
@@ -69,6 +67,25 @@ onMounted(async () => {
     blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
   }
   await backfillFileSizes()
+}
+
+let unlistenDetail: (() => void) | null = null
+
+onMounted(async () => {
+  if (!todoItem) {
+    router.push('/')
+    return
+  }
+  await loadDetail()
+
+  unlistenDetail = await listen<{ folder_name: string }>('todo-detail-changed', (e) => {
+    if (e.payload.folder_name === todoItem?.folder_name) {
+      loadDetail()
+    }
+  })
+})
+onUnmounted(() => {
+  unlistenDetail?.()
 })
 
 async function backfillFileSizes() {

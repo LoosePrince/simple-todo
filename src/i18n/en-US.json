@@ -42,6 +42,9 @@
         "bubbleItalic": "Italic",
         "bubbleColor": "Text color"
     },
+    "titleBar": {
+        "newWindow": "New window"
+    },
     "contextMenu": {
         "openFileLocation": "Open file location",
         "saveAs": "Save as...",

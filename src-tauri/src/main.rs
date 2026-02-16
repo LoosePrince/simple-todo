@@ -2,10 +2,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use uuid::Uuid;
+
+static WINDOW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TodoItem {
@@ -63,6 +66,7 @@ fn save_app_config(handle: tauri::AppHandle, config: AppConfig) -> Result<(), St
     let config_path = config_dir.join("config.json");
     let content = serde_json::to_string(&config).map_err(|e| e.to_string())?;
     fs::write(config_path, content).map_err(|e| e.to_string())?;
+    let _ = handle.emit("config-changed", ());
     Ok(())
 }
 
@@ -78,7 +82,7 @@ fn get_todos(data_path: String) -> Vec<TodoItem> {
 }
 
 #[tauri::command]
-fn save_todos(data_path: String, todos: Vec<TodoItem>) -> Result<(), String> {
+fn save_todos(app: tauri::AppHandle, data_path: String, todos: Vec<TodoItem>) -> Result<(), String> {
     let data_dir = Path::new(&data_path);
     if !data_dir.exists() {
         fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
@@ -86,6 +90,7 @@ fn save_todos(data_path: String, todos: Vec<TodoItem>) -> Result<(), String> {
     let todos_path = data_dir.join("todos.json");
     let content = serde_json::to_string(&todos).map_err(|e| e.to_string())?;
     fs::write(todos_path, content).map_err(|e| e.to_string())?;
+    let _ = app.emit("todos-changed", ());
     Ok(())
 }
 
@@ -99,9 +104,12 @@ fn create_todo_folder(data_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_todo_detail(data_path: String, folder_name: String, content: String) -> Result<(), String> {
-    let detail_path = Path::new(&data_path).join(folder_name).join("content.json");
+fn save_todo_detail(app: tauri::AppHandle, data_path: String, folder_name: String, content: String) -> Result<(), String> {
+    let detail_path = Path::new(&data_path).join(&folder_name).join("content.json");
     fs::write(detail_path, content).map_err(|e| e.to_string())?;
+    #[derive(Clone, Serialize)]
+    struct Payload { folder_name: String }
+    let _ = app.emit("todo-detail-changed", Payload { folder_name });
     Ok(())
 }
 
@@ -116,7 +124,7 @@ fn get_todo_detail(data_path: String, folder_name: String) -> Result<String, Str
 }
 
 #[tauri::command]
-fn move_data(old_path: String, new_path: String) -> Result<(), String> {
+fn move_data(app: tauri::AppHandle, old_path: String, new_path: String) -> Result<(), String> {
     if old_path == new_path || old_path.is_empty() || new_path.is_empty() {
         return Ok(());
     }
@@ -151,6 +159,7 @@ fn move_data(old_path: String, new_path: String) -> Result<(), String> {
             fs::remove_file(&path).map_err(|e| format!("Failed to remove old file: {}", e))?;
         }
     }
+    let _ = app.emit("todos-changed", ());
     Ok(())
 }
 
@@ -212,6 +221,21 @@ fn get_file_icon(extension: String) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+fn create_new_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let label = format!("main-{}", n);
+    let parsed = url.parse::<url::Url>().map_err(|e| e.to_string())?;
+    let webview_url = WebviewUrl::External(parsed);
+    WebviewWindowBuilder::new(&app, &label, webview_url)
+        .title("简易代办")
+        .inner_size(800.0, 600.0)
+        .decorations(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -222,6 +246,11 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+        }))
         .invoke_handler(tauri::generate_handler![
             get_app_config,
             save_app_config,
@@ -231,7 +260,8 @@ fn main() {
             save_todo_detail,
             get_todo_detail,
             move_data,
-            get_file_icon
+            get_file_icon,
+            create_new_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

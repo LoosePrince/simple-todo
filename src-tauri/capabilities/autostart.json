@@ -1,7 +1,7 @@
 {
   "identifier": "autostart-capability",
   "description": "Allow enabling/disabling launch at login.",
-  "windows": ["main"],
+  "windows": ["main", "main-*"],
   "permissions": [
     "autostart:allow-enable",
     "autostart:allow-disable",

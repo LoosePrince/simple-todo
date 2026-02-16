@@ -1,10 +1,28 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Pin, Minus, Maximize, X } from 'lucide-vue-next'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { useI18n } from 'vue-i18n'
+import { Pin, Minus, Maximize, X, SquarePlus } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const appWindow = getCurrentWindow()
 const pinned = ref(false)
+let newWindowCount = 0
+
+async function openNewWindow() {
+  try {
+    const label = `main-${Date.now()}-${++newWindowCount}`
+    const w = new WebviewWindow(label, {
+      url: window.location.href,
+      title: '简易代办',
+      width: 800,
+      height: 600,
+      decorations: false
+    })
+    w.once('tauri://error', (e) => console.error('New window error:', e))
+  } catch (_) {}
+}
 
 onMounted(async () => {
   try {
@@ -28,6 +46,9 @@ const close = () => appWindow.close()
   <div data-tauri-drag-region class="titlebar">
     <div class="title">简易代办</div>
     <div class="controls">
+      <div class="control-btn" :title="t('titleBar.newWindow')" @click="openNewWindow">
+        <SquarePlus :size="14" />
+      </div>
       <div class="control-btn pin-btn" :class="{ active: pinned }" @click="togglePin">
         <Pin :size="14" />
       </div>

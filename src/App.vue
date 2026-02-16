@@ -1,20 +1,36 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
+import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from './store/settings'
+import { useTodoStore } from './store/todo'
 import TitleBar from './components/TitleBar.vue'
 
 const settingsStore = useSettingsStore()
+const todoStore = useTodoStore()
+const unlistenFns: Array<() => void> = []
 
 function preventContextMenu(e: Event) {
   e.preventDefault()
 }
 
-onMounted(() => {
+onMounted(async () => {
   settingsStore.applySettings().catch(() => {})
   document.addEventListener('contextmenu', preventContextMenu)
+
+  const unlistenConfig = await listen('config-changed', () => {
+    settingsStore.loadConfig().catch(() => {})
+  })
+  unlistenFns.push(unlistenConfig)
+
+  const unlistenTodos = await listen('todos-changed', () => {
+    const path = settingsStore.config.data_path
+    if (path) todoStore.loadTodos(path).catch(() => {})
+  })
+  unlistenFns.push(unlistenTodos)
 })
 onUnmounted(() => {
   document.removeEventListener('contextmenu', preventContextMenu)
+  unlistenFns.forEach((fn) => fn())
 })
 </script>
 
