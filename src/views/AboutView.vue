@@ -48,6 +48,13 @@ const shortcutItems: { keys: string[][]; descKey: string }[] = [
     </div>
 
     <div class="about-content">
+      <div class="about-logo-section">
+        <div class="about-logo">
+          <img src="/icon.png" alt="Simple Todo" class="about-logo-img" />
+        </div>
+        <h1 class="about-app-title">{{ t('about.appName') || 'Simple Todo' }}</h1>
+      </div>
+
       <section class="about-section">
         <h3>{{ t('about.introTitle') }}</h3>
         <p class="about-text">{{ t('about.intro') }}</p>
@@ -110,6 +117,58 @@ const shortcutItems: { keys: string[][]; descKey: string }[] = [
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+/* Logo 区域 */
+.about-logo-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0;
+  margin-bottom: 8px;
+}
+
+.about-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  background: var(--app-surface-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.about-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.about-logo:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.dark .about-logo {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.dark .about-logo:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.about-app-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--app-text-color);
+  letter-spacing: -0.5px;
 }
 
 .about-section h3 {

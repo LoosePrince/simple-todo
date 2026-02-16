@@ -66,6 +66,7 @@
     },
     "about": {
         "title": "About",
+        "appName": "Simple Todo",
         "introTitle": "About this app",
         "intro": "This is a desktop todo app built with Tauri and Vue. You can create todos and edit details with rich text (headings, lists, bold/italic, images, file attachments, and task checklists). Data is stored in a local folder of your choice.",
         "shortcutsTitle": "Shortcuts",
@@ -79,7 +80,7 @@
         "tipsTitle": "Tips",
         "tipsList": "Click a todo title to open the editor. Use the checkbox on the list to mark complete. Click the task progress number to quickly toggle sub-tasks in a popup. In Settings you can change data path, theme, and font. Images and attachments support right-click to open location or save as.",
         "footerIntroPrefix": "A personal desktop todo app by ",
-        "footerIntroLinkText": "@树梢上有只鸟(LoosePrince)",
+        "footerIntroLinkText": "{'@'}树梢上有只鸟(LoosePrince)",
         "footerRepo": "Project: "
     }
 }
