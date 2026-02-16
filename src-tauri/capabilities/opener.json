@@ -1,12 +1,16 @@
 {
   "identifier": "opener-capability",
-  "description": "Allow opening files in default app and revealing in file explorer.",
+  "description": "Allow opening files in default app, revealing in file explorer, and opening project URL.",
   "windows": ["main", "main-*"],
   "permissions": [
     "opener:allow-reveal-item-in-dir",
+    { "identifier": "opener:allow-open-path", "allow": [{ "path": "**" }] },
     {
-      "identifier": "opener:allow-open-path",
-      "allow": [{ "path": "**" }]
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/LoosePrince/simple-todo" },
+        { "url": "https://github.com/LoosePrince" }
+      ]
     }
   ]
 }

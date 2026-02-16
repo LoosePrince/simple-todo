@@ -5,6 +5,7 @@
         "add": "添加",
         "delete": "删除",
         "settings": "设置",
+        "about": "关于",
         "saveSuccess": "保存成功"
     },
     "todo": {
@@ -62,5 +63,23 @@
         "openLocationError": "打开文件位置失败",
         "saveAsError": "另存为失败",
         "openFileError": "打开文件失败"
+    },
+    "about": {
+        "title": "关于",
+        "introTitle": "项目介绍",
+        "intro": "本应用是一个基于 Tauri + Vue 的桌面待办应用。支持创建待办、在详情中使用富文本编辑（标题、列表、加粗/斜体、插入图片与文件、任务清单等），数据保存在您选择的本地文件夹中。",
+        "shortcutsTitle": "快捷键",
+        "shortcutAddTodo": "添加待办（列表页）",
+        "shortcutSave": "保存",
+        "shortcutUndo": "撤销",
+        "shortcutRedo": "重做",
+        "shortcutBold": "加粗",
+        "shortcutItalic": "斜体",
+        "shortcutOr": "或",
+        "tipsTitle": "操作技巧",
+        "tipsList": "点击任务项标题进入详情编辑；列表左侧勾选可标记完成；点击任务进度数字可弹窗快速勾选子任务；在设置中可更换数据保存位置、主题与字体。图片与附件支持右键打开位置或另存为。",
+        "footerIntroPrefix": "本项目为自用桌面待办应用，开发者 ",
+        "footerIntroLinkText": "@树梢上有只鸟(LoosePrince)",
+        "footerRepo": "项目地址："
     }
 }

@@ -343,6 +343,16 @@ function onAssetContextmenu(payload: { type: 'image' | 'file'; assetPath: string
   contextMenu.value = { x: payload.clientX, y: payload.clientY, type: payload.type, assetPath: payload.assetPath }
 }
 
+async function onOpenAsset(payload: { type: 'image' | 'file'; assetPath: string; id: string }) {
+  try {
+    const fullPath = await getAssetFullPath(payload.assetPath)
+    await openPath(fullPath)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    ElMessage.error(`${t('contextMenu.openFileError')}: ${msg}`)
+  }
+}
+
 function closeContextMenu() {
   contextMenu.value = null
 }
@@ -460,6 +470,7 @@ const handleDrop = async (e: DragEvent) => {
           ref="editorRef"
           v-model="blocks"
           @contextmenu="onAssetContextmenu"
+          @open-asset="onOpenAsset"
         />
       </el-scrollbar>
     </div>

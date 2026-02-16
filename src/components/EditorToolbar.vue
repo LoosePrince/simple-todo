@@ -26,13 +26,68 @@ const blockStyles = [
 
 const bubbleMenuVisible = ref(false)
 const bubbleMenuPos = ref({ top: 0, left: 0 })
+const bubbleColorValue = ref('#000000')
+const isColorPickerOpen = ref(false)
+const savedBubbleSelection = ref<Range | null>(null)
+const DEFAULT_TEXT_COLOR = '#000000'
 const BUBBLE_MENU_PADDING = 8
-const BUBBLE_MENU_APPROX_WIDTH = 140
+const BUBBLE_MENU_APPROX_WIDTH = 220
 const BUBBLE_MENU_APPROX_HEIGHT = 36
 
+/** 获取当前选中文本的颜色 */
+function getSelectedTextColor(): string {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return DEFAULT_TEXT_COLOR
+  
+  const range = selection.getRangeAt(0)
+  if (range.collapsed) return DEFAULT_TEXT_COLOR
+  
+  // 尝试从选中文本的父元素获取颜色
+  let node: Node | null = range.commonAncestorContainer
+  if (node.nodeType === Node.TEXT_NODE) {
+    node = node.parentElement
+  }
+  
+  let element = node as HTMLElement | null
+  while (element) {
+    const color = window.getComputedStyle(element).color
+    if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent' && color !== 'rgb(0, 0, 0)') {
+      // 将 rgb/rgba 转换为 hex
+      const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+      if (rgbMatch) {
+        const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0')
+        const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0')
+        const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0')
+        return `#${r}${g}${b}`.toUpperCase()
+      }
+      // 如果已经是 hex 格式
+      if (color.startsWith('#')) return color.toUpperCase()
+    }
+    element = element.parentElement
+  }
+  
+  return DEFAULT_TEXT_COLOR
+}
+
 const updateBubbleMenu = () => {
+  // 如果颜色选择器打开，不关闭工具栏
+  if (isColorPickerOpen.value) {
+    return
+  }
+  
+  // 检查点击是否在工具栏或颜色选择器内
+  const activeElement = document.activeElement
+  if (activeElement && (activeElement.closest('.bubble-menu') || activeElement.closest('.el-color-picker') || activeElement.closest('.el-color-picker__panel'))) {
+    return
+  }
+  
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    // 检查是否有颜色选择器相关的元素在焦点
+    const pickerPanel = document.querySelector('.el-color-picker__panel')
+    if (pickerPanel && pickerPanel.contains(activeElement)) {
+      return
+    }
     bubbleMenuVisible.value = false
     return
   }
@@ -50,15 +105,123 @@ const updateBubbleMenu = () => {
   left += scrollX
   left = Math.max(BUBBLE_MENU_PADDING, Math.min(vw - BUBBLE_MENU_APPROX_WIDTH - BUBBLE_MENU_PADDING + scrollX, left))
   bubbleMenuPos.value = { top, left }
+  // 更新颜色选择器显示当前选中文本的颜色
+  bubbleColorValue.value = getSelectedTextColor()
   bubbleMenuVisible.value = true
 }
 
+function onBubbleColorChange(val: string | null) {
+  // 空值时不执行命令（不保存颜色），但保持显示默认颜色
+  if (val == null || val === '' || val === 'null') {
+    bubbleColorValue.value = DEFAULT_TEXT_COLOR
+    // 延迟重置，确保颜色选择器完全关闭
+    setTimeout(() => {
+      isColorPickerOpen.value = false
+      // 恢复保存的选区
+      if (savedBubbleSelection.value) {
+        const sel = window.getSelection()
+        if (sel) {
+          sel.removeAllRanges()
+          sel.addRange(savedBubbleSelection.value)
+        }
+      }
+    }, 50)
+    return
+  }
+  
+  const color = val.startsWith('#') ? val : `#${val}`
+  bubbleColorValue.value = color
+  
+  // 延迟重置，确保颜色选择器完全关闭后再恢复选区
+  setTimeout(() => {
+    isColorPickerOpen.value = false
+    
+    // 恢复保存的选区
+    if (savedBubbleSelection.value) {
+      const sel = window.getSelection()
+      if (sel) {
+        sel.removeAllRanges()
+        sel.addRange(savedBubbleSelection.value)
+      }
+    }
+    
+    // 保存选区并执行命令
+    emit('mousedown')
+    emit('command', 'foreColor', color)
+  }, 50)
+}
+
+function onBubbleColorPickerMouseDown() {
+  // 点击颜色选择器时保存选区
+  const selection = window.getSelection()
+  if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+    savedBubbleSelection.value = selection.getRangeAt(0).cloneRange()
+    isColorPickerOpen.value = true
+    emit('mousedown')
+  }
+}
+
+function onBubbleColorActiveChange(val: string | null) {
+  // 颜色面板打开时标记状态
+  if (val != null && !isColorPickerOpen.value) {
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+      if (!savedBubbleSelection.value) {
+        savedBubbleSelection.value = selection.getRangeAt(0).cloneRange()
+      }
+      isColorPickerOpen.value = true
+      emit('mousedown')
+    }
+  } else if (val == null) {
+    // 颜色面板关闭时，延迟重置标志（给 change 事件时间执行）
+    setTimeout(() => {
+      if (!isColorPickerOpen.value) {
+        isColorPickerOpen.value = false
+      }
+    }, 100)
+  }
+}
+
+// 监听颜色选择器面板的显示/隐藏
+let colorPickerObserver: MutationObserver | null = null
+
 onMounted(() => {
   document.addEventListener('selectionchange', updateBubbleMenu)
+  
+  // 监听颜色选择器面板的显示
+  colorPickerObserver = new MutationObserver(() => {
+    const pickerPanel = document.querySelector('.el-color-picker__panel')
+    if (pickerPanel && pickerPanel.parentElement) {
+      isColorPickerOpen.value = true
+      // 保存当前选区
+      const selection = window.getSelection()
+      if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+        if (!savedBubbleSelection.value) {
+          savedBubbleSelection.value = selection.getRangeAt(0).cloneRange()
+        }
+      }
+    } else {
+      // 面板关闭时延迟重置（给 change 事件时间执行）
+      setTimeout(() => {
+        if (!document.querySelector('.el-color-picker__panel')) {
+          isColorPickerOpen.value = false
+        }
+      }, 100)
+    }
+  })
+  
+  colorPickerObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  })
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('selectionchange', updateBubbleMenu)
+  if (colorPickerObserver) {
+    colorPickerObserver.disconnect()
+    colorPickerObserver = null
+  }
 })
 </script>
 
@@ -137,6 +300,7 @@ onBeforeUnmount(() => {
         class="bubble-menu"
         :style="{ top: bubbleMenuPos.top + 'px', left: bubbleMenuPos.left + 'px' }"
         @mousedown="emit('mousedown')"
+        @click.stop
       >
         <button type="button" class="bubble-btn" :title="t('editor.bubbleBold')" @click="emit('command', 'bold')">
           <Bold :size="14" />
@@ -145,8 +309,27 @@ onBeforeUnmount(() => {
           <Italic :size="14" />
         </button>
         <el-tooltip :content="t('editor.bubbleColor')" placement="top" popper-class="editor-tooltip-nohit">
-          <el-color-picker size="small" class="bubble-color" @change="(val: string) => emit('command', 'foreColor', val)" />
+          <div class="bubble-color-wrapper" @mousedown.stop="onBubbleColorPickerMouseDown" @click.stop>
+            <el-color-picker 
+              size="small" 
+              class="bubble-color" 
+              color-format="hex" 
+              :model-value="bubbleColorValue" 
+              @change="onBubbleColorChange"
+              @active-change="onBubbleColorActiveChange"
+            />
+          </div>
         </el-tooltip>
+        <span class="bubble-divider" />
+        <button type="button" class="bubble-btn" :title="t('editor.toolbarAlignLeft')" @click="emit('command', 'justifyLeft')">
+          <AlignLeft :size="14" />
+        </button>
+        <button type="button" class="bubble-btn" :title="t('editor.toolbarAlignCenter')" @click="emit('command', 'justifyCenter')">
+          <AlignCenter :size="14" />
+        </button>
+        <button type="button" class="bubble-btn" :title="t('editor.toolbarAlignRight')" @click="emit('command', 'justifyRight')">
+          <AlignRight :size="14" />
+        </button>
       </div>
     </Teleport>
   </div>
@@ -300,7 +483,22 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.bubble-color {
+.bubble-color-wrapper {
+  display: inline-flex;
+  align-items: center;
   margin-left: 2px;
+}
+
+
+.bubble-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+}
+
+.dark .bubble-divider {
+  background: rgba(255, 255, 255, 0.15);
 }
 </style>

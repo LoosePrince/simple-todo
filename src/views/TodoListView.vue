@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
-import { useTodoStore } from '../store/todo'
-import { useSettingsStore } from '../store/settings'
-import { useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
-import { Settings, Trash2, Plus } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
+import { Info, Plus, Settings, Trash2 } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import type { EditorNode } from '../components/AdvancedEditor.vue'
+import { useSettingsStore } from '../store/settings'
+import { useTodoStore } from '../store/todo'
 
 const { t } = useI18n()
 const todoStore = useTodoStore()
@@ -191,9 +191,14 @@ function closeTaskPopup() {
   <div class="todo-list-view">
     <div class="header">
       <h1>{{ t('todo.listTitle') }}</h1>
-      <el-button circle @click="router.push('/settings')">
-        <Settings :size="20" />
-      </el-button>
+      <div class="header-actions">
+        <el-button circle class="header-icon-btn" :title="t('common.about')" @click="router.push('/about')">
+          <Info :size="20" />
+        </el-button>
+        <el-button circle class="header-icon-btn" :title="t('common.settings')" @click="router.push('/settings')">
+          <Settings :size="20" />
+        </el-button>
+      </div>
     </div>
 
     <div class="input-section">
@@ -285,6 +290,27 @@ function closeTaskPopup() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-actions .header-icon-btn {
+  border: none;
+}
+
+.header-actions .header-icon-btn:hover,
+.header-actions .header-icon-btn:focus {
+  border: none;
+  background: var(--el-fill-color-light);
+}
+
+.dark .header-actions .header-icon-btn:hover,
+.dark .header-actions .header-icon-btn:focus {
+  background: var(--el-fill-color);
 }
 
 .input-section {
