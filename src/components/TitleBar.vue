@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { Maximize, Minus, Pin, SquarePlus, X } from 'lucide-vue-next'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Pin, Minus, Maximize, X, SquarePlus } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const appWindow = getCurrentWindow()
@@ -102,7 +102,7 @@ const close = () => appWindow.close()
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  width: 45px;
+  width: 30px;
   height: 100%;
   cursor: pointer;
   transition: background 0.2s;

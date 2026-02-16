@@ -30,6 +30,7 @@ const emit = defineEmits<{
   (e: 'upload-file'): void
   (e: 'contextmenu', payload: { type: 'image' | 'file'; assetPath: string; id: string; clientX: number; clientY: number }): void
   (e: 'open-asset', payload: { type: 'image' | 'file'; assetPath: string; id: string }): void
+  (e: 'paste-files', payload: { files: File[]; text: string }): void
 }>()
 
 const editorRef = ref<HTMLDivElement | null>(null)
@@ -472,6 +473,42 @@ const handleInput = () => {
   isInternalUpdate.value = true
   emit('update:modelValue', domToNodes())
   setTimeout(() => isInternalUpdate.value = false, 0)
+}
+
+/** 在当前位置插入纯文本，并触发同步 */
+function insertPlainText(text: string) {
+  if (!text) return
+  const normalized = text.replace(/\r\n/g, '\n')
+  document.execCommand('insertText', false, normalized)
+  handleInput()
+}
+
+/** 粘贴：若包含文件则交给上层处理，否则当作纯文本 */
+function handlePaste(e: ClipboardEvent) {
+  const data = e.clipboardData
+  if (!data) return
+
+  const items = Array.from(data.items || [])
+  const files: File[] = []
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile()
+      if (f) files.push(f)
+    }
+  }
+
+  const text = data.getData('text/plain') ?? ''
+
+  if (files.length > 0) {
+    e.preventDefault()
+    emit('paste-files', { files, text })
+    return
+  }
+
+  // 仅文本：以纯文本形式插入
+  e.preventDefault()
+  if (!text) return
+  insertPlainText(text)
 }
 
 /** 阻止在图片/文件块内部输入 */
@@ -938,7 +975,7 @@ function insertTaskListAtSelection() {
   handleInput()
 }
 
-defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCursorBlockIndex, insertTaskListAtSelection })
+defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCursorBlockIndex, insertTaskListAtSelection, insertPlainText })
 </script>
 
 <template>
@@ -948,6 +985,7 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCur
       class="advanced-editor"
       contenteditable="true"
       @input="handleInput"
+      @paste="handlePaste"
       @keydown.enter.capture="handleEnterKey"
       @beforeinput="handleBeforeInput"
       @click="onEditorClick"

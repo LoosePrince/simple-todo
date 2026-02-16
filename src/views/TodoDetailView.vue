@@ -405,18 +405,18 @@ async function contextMenuOpenFile() {
 }
 
 const handleDrop = async (e: DragEvent) => {
-  e.preventDefault()
   const files = e.dataTransfer?.files
   if (!files?.length || !todoItem) return
+  e.preventDefault()
   try {
     await ensureAssetsDir()
     const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
     for (const file of Array.from(files)) {
       const arrayBuffer = await file.arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
       const hash = await sha256Hex(arrayBuffer)
-      const ext = getExt(file.name)
+      const extFromName = getExt(file.name)
       const isImage = file.type.startsWith('image/')
+      const ext = extFromName || (isImage ? (file.type.split('/')[1] || 'png') : 'bin')
       const targetFileName = `${hash}.${ext}`
       const assetPath = `assets/${targetFileName}`
       const targetPath = await join(assetsDir, targetFileName)
@@ -425,14 +425,105 @@ const handleDrop = async (e: DragEvent) => {
       } catch {
         await writeFile(targetPath, new Uint8Array(arrayBuffer))
       }
-      blocks.value.push({
-        type: isImage ? 'image' : 'file',
-        id: crypto.randomUUID(),
-        url: convertFileSrc(targetPath),
-        assetPath,
-        fileName: isImage ? undefined : file.name,
-        ...(isImage ? { widthPercent: 100, align: 'left' as const } : {})
-      })
+      const node: EditorNode =
+        isImage
+          ? {
+              type: 'image',
+              id: crypto.randomUUID(),
+              url: convertFileSrc(targetPath),
+              assetPath,
+              widthPercent: 100,
+              align: 'left'
+            }
+          : {
+              type: 'file',
+              id: crypto.randomUUID(),
+              url: convertFileSrc(targetPath),
+              fileName: file.name || 'file',
+              assetPath
+            }
+      blocks.value.push(node)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    ElMessage.error(`上传失败: ${msg}`)
+  }
+}
+
+/** 处理从编辑器粘贴时带来的文件/图片/文本 */
+const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) => {
+  if (!todoItem) return
+  const { files, text } = payload
+  const newNodes: EditorNode[] = []
+
+  try {
+    if (files && files.length) {
+      await ensureAssetsDir()
+      const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
+      for (const file of files) {
+        const arrayBuffer = await file.arrayBuffer()
+        const hash = await sha256Hex(arrayBuffer)
+        const isImage = file.type.startsWith('image/')
+        let ext = getExt(file.name || '')
+        if (!ext) {
+          if (isImage) {
+            ext = (file.type.split('/')[1] || 'png').toLowerCase()
+          } else {
+            ext = 'bin'
+          }
+        }
+        const targetFileName = `${hash}.${ext}`
+        const assetPath = `assets/${targetFileName}`
+        const targetPath = await join(assetsDir, targetFileName)
+        try {
+          await stat(targetPath)
+        } catch {
+          await writeFile(targetPath, new Uint8Array(asArrayBuffer(arrayBuffer)))
+        }
+        if (isImage) {
+          newNodes.push({
+            type: 'image',
+            id: crypto.randomUUID(),
+            url: convertFileSrc(targetPath),
+            assetPath,
+            widthPercent: 100,
+            align: 'left'
+          })
+        } else {
+          newNodes.push({
+            type: 'file',
+            id: crypto.randomUUID(),
+            url: convertFileSrc(targetPath),
+            fileName: file.name || 'file',
+            assetPath
+          })
+        }
+      }
+    }
+
+    if (text && text.trim().length > 0) {
+      const normalized = text.replace(/\r\n/g, '\n')
+      const lines = normalized.split('\n')
+      for (const line of lines) {
+        newNodes.push({
+          type: 'p',
+          id: crypto.randomUUID(),
+          children: line ? [{ type: 'text', value: line }] : []
+        })
+      }
+    }
+
+    if (!newNodes.length) return
+
+    const idx = editorRef.value?.getCursorBlockIndex?.() ?? blocks.value.length - 1
+    if (idx >= 0 && idx < blocks.value.length) {
+      blocks.value = [
+        ...blocks.value.slice(0, idx + 1),
+        ...newNodes,
+        ...blocks.value.slice(idx + 1)
+      ]
+    } else {
+      blocks.value = [...blocks.value, ...newNodes]
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -471,6 +562,7 @@ const handleDrop = async (e: DragEvent) => {
           v-model="blocks"
           @contextmenu="onAssetContextmenu"
           @open-asset="onOpenAsset"
+          @paste-files="handleEditorPasteFiles"
         />
       </el-scrollbar>
     </div>
