@@ -14,6 +14,8 @@ export type EditorNode =
   | { type: 'ul'; id?: string; children: EditorNode[] }
   | { type: 'ol'; id?: string; children: EditorNode[] }
   | { type: 'li'; id?: string; children: EditorNode[] }
+  | { type: 'taskList'; id?: string; children: EditorNode[] }
+  | { type: 'taskItem'; id?: string; checked: boolean; children: EditorNode[] }
   | { type: 'image'; id: string; url: string; assetPath?: string; widthPercent?: number; align?: 'left' | 'center' | 'right' }
   | { type: 'file'; id: string; url: string; fileName?: string; fileSize?: number; assetPath?: string }
 
@@ -69,7 +71,7 @@ const nodeToHtml = (node: EditorNode): string => {
     const ap = node.assetPath ?? ''
     const ext = (node.fileName ?? '').split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || ''
     const extAttr = ext ? ` data-ext="${escapeHtml(ext)}"` : ''
-    return `<span class="editor-block file-block" data-id="${node.id}" data-url="${escapeHtml(url)}" data-file-size="${node.fileSize ?? ''}" data-asset-path="${escapeHtml(ap)}" contenteditable="false" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card"><span class="file-icon"${extAttr}><span class="file-icon-fallback">📄</span><img class="file-icon-img" alt=""></span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span>`
+    return `<span class="editor-block file-block" data-id="${node.id}" data-url="${escapeHtml(url)}" data-asset-path="${escapeHtml(ap)}" contenteditable="false" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card"><span class="file-icon"${extAttr}><span class="file-icon-fallback">📄</span><img class="file-icon-img" alt=""></span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span>`
   }
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
   if (node.type === 'em') return `<em>${(node.children || []).map(nodeToHtml).join('')}</em>`
@@ -80,6 +82,15 @@ const nodeToHtml = (node: EditorNode): string => {
   if (node.type === 'ul' || node.type === 'ol') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<li><br></li>'
     return `<${node.type} class="editor-block list-block" data-id="${node.id ?? genId()}">${inner}</${node.type}>`
+  }
+  if (node.type === 'taskList') {
+    const inner = (node.children || []).map(nodeToHtml).join('') || ''
+    return `<ul class="editor-block task-list" data-id="${node.id ?? genId()}" data-type="task">${inner || '<li class="editor-block task-item" data-id="' + genId() + '" data-checked="false"><input type="checkbox" class="task-item-checkbox" contenteditable="false"><span class="task-item-content"><br></span></li>'}</ul>`
+  }
+  if (node.type === 'taskItem') {
+    const checked = node.checked ?? false
+    const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
+    return `<li class="editor-block task-item" data-id="${node.id ?? genId()}" data-checked="${checked}"><input type="checkbox" class="task-item-checkbox" contenteditable="false"${checked ? ' checked' : ''}><span class="task-item-content">${inner}</span></li>`
   }
   if (node.type === 'p' || node.type === 'h1' || node.type === 'h2') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
@@ -146,9 +157,12 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
     } else if (child.classList.contains('file-block')) {
       const name = child.querySelector('.file-name')?.textContent ?? ''
       const url = child.getAttribute('data-url') ?? ''
-      const fs = child.getAttribute('data-file-size')
       const ap = child.getAttribute('data-asset-path') ?? ''
-      out.push({ type: 'file', id, url, fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
+      out.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined })
+    } else if (child.classList.contains('task-item-checkbox')) {
+      // skip checkbox, it is reflected in data-checked on the li
+    } else if (child.classList.contains('task-item-content')) {
+      out.push(...collectChildren(child))
     } else if (tag === 'strong' || tag === 'b') {
       out.push({ type: 'strong', children: collectChildren(child) })
     } else if (tag === 'em' || tag === 'i') {
@@ -229,12 +243,22 @@ const domToNodes = (): EditorNode[] => {
     } else if (child.classList.contains('file-block')) {
       const name = child.querySelector('.file-name')?.textContent ?? ''
       const url = child.getAttribute('data-url') ?? ''
-      const fs = child.getAttribute('data-file-size')
       const ap = child.getAttribute('data-asset-path') ?? ''
-      roots.push({ type: 'file', id, url, fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
+      roots.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined })
     } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
       const align = getBlockAlign(child)
       roots.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(child) })
+    } else if (child.classList.contains('task-list')) {
+      const taskListChildren: EditorNode[] = []
+      child.querySelectorAll(':scope > li.task-item').forEach(liEl => {
+        const li = liEl as HTMLElement
+        const contentEl = li.querySelector('.task-item-content') as HTMLElement | null
+        const children = contentEl ? collectChildren(contentEl) : []
+        const checked = li.getAttribute('data-checked') === 'true' || (li.querySelector('.task-item-checkbox') as HTMLInputElement | null)?.checked === true
+        taskListChildren.push({ type: 'taskItem', id: li.getAttribute('data-id') ?? genId(), checked, children })
+      })
+      if (taskListChildren.length === 0) taskListChildren.push({ type: 'taskItem', id: genId(), checked: false, children: [] })
+      roots.push({ type: 'taskList', id: child.getAttribute('data-id') ?? genId(), children: taskListChildren })
     } else if (tag === 'ul' || tag === 'ol') {
       const listChildren: EditorNode[] = []
       child.querySelectorAll(':scope > li').forEach(li => {
@@ -296,14 +320,23 @@ function domToNodesFromContainer(div: HTMLElement): EditorNode[] {
         })
       } else if (el.classList.contains('file-block')) {
         const name = el.querySelector('.file-name')?.textContent ?? ''
-        const fs = el.getAttribute('data-file-size')
         const ap = el.getAttribute('data-asset-path') ?? ''
-        roots.push({ type: 'file', id, url: el.getAttribute('data-url') ?? '', fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
+        roots.push({ type: 'file', id, url: el.getAttribute('data-url') ?? '', fileName: name, assetPath: ap || undefined })
       } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
         const align = getBlockAlign(el)
         roots.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(el) })
-      }
-      else if (tag === 'ul' || tag === 'ol') {
+      } else if (el.classList.contains('task-list')) {
+        const taskListChildren: EditorNode[] = []
+        el.querySelectorAll(':scope > li.task-item').forEach(liEl => {
+          const li = liEl as HTMLElement
+          const contentEl = li.querySelector('.task-item-content') as HTMLElement | null
+          const children = contentEl ? collectChildren(contentEl) : []
+          const checked = li.getAttribute('data-checked') === 'true' || (li.querySelector('.task-item-checkbox') as HTMLInputElement | null)?.checked === true
+          taskListChildren.push({ type: 'taskItem', id: li.getAttribute('data-id') ?? genId(), checked, children })
+        })
+        if (taskListChildren.length === 0) taskListChildren.push({ type: 'taskItem', id: genId(), checked: false, children: [] })
+        roots.push({ type: 'taskList', id: el.getAttribute('data-id') ?? genId(), children: taskListChildren })
+      } else if (tag === 'ul' || tag === 'ol') {
         const listChildren: EditorNode[] = []
         el.querySelectorAll(':scope > li').forEach(li => {
           listChildren.push({ type: 'li', id: (li as HTMLElement).getAttribute('data-id') ?? genId(), children: collectChildren(li as HTMLElement) })
@@ -415,8 +448,52 @@ const selectedImageNode = computed(() => {
   return props.modelValue.find((n): n is EditorNode & { type: 'image' } => n.type === 'image' && (n as { id?: string }).id === selectedImageId.value) ?? null
 })
 
+/** 在节点树中按 id 查找 taskItem */
+function findTaskItemById(nodes: EditorNode[], id: string): (EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }) | null {
+  for (const n of nodes) {
+    if (n.type === 'taskItem' && (n.id === id || (n as { id?: string }).id === id))
+      return n as EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }
+    if ('children' in n && Array.isArray(n.children)) {
+      const found = findTaskItemById(n.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/** 在节点树中把指定 id 的 taskItem 的 checked 设为给定值，返回新树 */
+function updateTaskItemCheckedInTree(nodes: EditorNode[], taskItemId: string, checked: boolean): EditorNode[] {
+  return nodes.map((n) => {
+    if (n.type === 'taskItem' && ((n as { id?: string }).id === taskItemId)) {
+      return { ...n, checked } as EditorNode
+    }
+    if ('children' in n && Array.isArray(n.children)) {
+      return { ...n, children: updateTaskItemCheckedInTree(n.children, taskItemId, checked) } as EditorNode
+    }
+    return n
+  })
+}
+
 function onEditorClick(e: MouseEvent) {
   const target = e.target as HTMLElement
+  const taskCheckbox = target.classList.contains('task-item-checkbox') ? target : target.closest('.task-item-checkbox')
+  if (taskCheckbox) {
+    e.preventDefault()
+    const li = (taskCheckbox as HTMLElement).closest('li.task-item') as HTMLElement | null
+    if (!li || !Array.isArray(props.modelValue)) return
+    const taskItemId = li.getAttribute('data-id') ?? null
+    if (!taskItemId) return
+    const current = findTaskItemById(props.modelValue, taskItemId)
+    if (!current) return
+    const nextChecked = !current.checked
+    const updated = updateTaskItemCheckedInTree(props.modelValue, taskItemId, nextChecked)
+    emit('update:modelValue', updated)
+    isInternalUpdate.value = true
+    if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(updated)
+    nextTick(updateFileIcons)
+    setTimeout(() => { isInternalUpdate.value = false }, 0)
+    return
+  }
   if (target.closest('.image-toolbar-root')) return
   if (target.classList.contains('image-block') || target.closest('.image-block-wrapper')) {
     const wrapper = target.closest('.image-block-wrapper') as HTMLElement | null
@@ -519,7 +596,31 @@ onUnmounted(() => {
   document.removeEventListener('selectionchange', selectionChangeHandler)
 })
 
-defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCursorBlockIndex })
+/** 在当前光标所在块之后插入一个任务列表（与“列表”按钮的插入位置逻辑一致） */
+function insertTaskListAtSelection() {
+  restoreSelection()
+  const idx = getCursorBlockIndex()
+  const taskNode: EditorNode = {
+    type: 'taskList',
+    id: genId(),
+    children: [{ type: 'taskItem', id: genId(), checked: false, children: [] }]
+  }
+  const html = nodeToHtml(taskNode)
+  const wrap = document.createElement('div')
+  wrap.innerHTML = html
+  const ul = wrap.firstElementChild
+  if (!ul || !editorRef.value) return
+  const editor = editorRef.value
+  if (idx >= 0 && idx < editor.childNodes.length) {
+    const next = editor.childNodes[idx + 1] || null
+    editor.insertBefore(ul, next)
+  } else {
+    editor.appendChild(ul)
+  }
+  handleInput()
+}
+
+defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCursorBlockIndex, insertTaskListAtSelection })
 </script>
 
 <template>
@@ -602,6 +703,30 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCur
 
 :deep(.list-block li) {
   margin: 0.2em 0;
+}
+
+:deep(.task-list) {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.5em 0;
+}
+
+:deep(.task-item) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0.35em 0;
+}
+
+:deep(.task-item-checkbox) {
+  flex-shrink: 0;
+  margin-top: 0.25em;
+  cursor: pointer;
+}
+
+:deep(.task-item-content) {
+  flex: 1;
+  min-width: 0;
 }
 
 :deep(.image-block) {

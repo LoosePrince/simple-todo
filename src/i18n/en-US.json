@@ -10,7 +10,10 @@
     "todo": {
         "listTitle": "Todo List",
         "placeholder": "Add a new todo...",
-        "detailTitle": "Todo Detail"
+        "detailTitle": "Todo Detail",
+        "taskProgress": "Task progress",
+        "taskLoadError": "Failed to load tasks",
+        "taskSaveError": "Save failed"
     },
     "detail": {
         "saved": "Saved",
@@ -44,6 +47,7 @@
         "toolbarRedo": "Redo",
         "toolbarInsertImage": "Insert image",
         "toolbarInsertFile": "Insert file",
+        "toolbarInsertTask": "Insert task",
         "bubbleBold": "Bold",
         "bubbleItalic": "Italic",
         "bubbleColor": "Text color"

@@ -1,16 +1,106 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useTodoStore } from '../store/todo'
 import { useSettingsStore } from '../store/settings'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { invoke } from '@tauri-apps/api/core'
 import { Settings, Trash2, Plus } from 'lucide-vue-next'
+import { ElMessage } from 'element-plus'
+import type { EditorNode } from '../components/AdvancedEditor.vue'
 
 const { t } = useI18n()
 const todoStore = useTodoStore()
 const settingsStore = useSettingsStore()
 const router = useRouter()
 const newTodoTitle = ref('')
+
+/** 从节点树抽取纯文本（用于任务项标签） */
+function getTextFromEditorNode(node: EditorNode): string {
+  if (node.type === 'text') return node.value ?? ''
+  if ('children' in node && Array.isArray(node.children)) {
+    return node.children.map(getTextFromEditorNode).join('')
+  }
+  return ''
+}
+
+/** 从 blocks 中收集所有 taskItem，用于弹窗列表 */
+function collectTaskItems(blocks: EditorNode[]): { node: EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }; label: string }[] {
+  const out: { node: EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }; label: string }[] = []
+  function walk(nodes: EditorNode[]) {
+    for (const n of nodes) {
+      if (n.type === 'taskItem') {
+        const label = getTextFromEditorNode(n).trim() || '(无文字)'
+        out.push({ node: n, label })
+      }
+      if ('children' in n && Array.isArray(n.children)) walk(n.children)
+    }
+  }
+  walk(blocks)
+  return out
+}
+
+/** 从详情 JSON 的节点树中统计 taskItem 的完成数/总数 */
+function countTaskProgress(nodes: unknown): { done: number; total: number } {
+  let done = 0
+  let total = 0
+  function walk(obj: unknown) {
+    if (!obj || typeof obj !== 'object') return
+    const node = obj as { type?: string; checked?: boolean; children?: unknown[] }
+    if (Array.isArray(node)) {
+      node.forEach(walk)
+      return
+    }
+    if (node.type === 'taskItem') {
+      total += 1
+      if (node.checked === true) done += 1
+    }
+    if (Array.isArray(node.children)) node.children.forEach(walk)
+  }
+  if (Array.isArray(nodes)) nodes.forEach(walk)
+  else walk(nodes)
+  return { done, total }
+}
+
+/** 保存前去掉 file 节点的 fileSize（与详情页一致） */
+function stripFileSizes(nodes: EditorNode[]): EditorNode[] {
+  return nodes.map((node) => {
+    if (node.type === 'file') {
+      const { fileSize: _, ...rest } = node
+      return rest as EditorNode
+    }
+    if ('children' in node && Array.isArray(node.children)) {
+      return { ...node, children: stripFileSizes(node.children) }
+    }
+    return node
+  })
+}
+
+const taskProgressMap = ref<Record<string, { done: number; total: number }>>({})
+
+async function loadTaskProgressForTodos() {
+  const dataPath = settingsStore.config.data_path
+  if (!dataPath || !todoStore.todos.length) {
+    taskProgressMap.value = {}
+    return
+  }
+  const next: Record<string, { done: number; total: number }> = {}
+  await Promise.all(
+    todoStore.todos.map(async (item) => {
+      try {
+        const content = await invoke<string>('get_todo_detail', {
+          dataPath,
+          folderName: item.folder_name
+        })
+        const nodes = JSON.parse(content) as unknown
+        next[item.id] = countTaskProgress(nodes)
+      } catch {
+        next[item.id] = { done: 0, total: 0 }
+      }
+    })
+  )
+  taskProgressMap.value = next
+}
 
 onMounted(async () => {
   try {
@@ -19,7 +109,10 @@ onMounted(async () => {
   try {
     await todoStore.loadTodos(settingsStore.config.data_path)
   } catch (_) {}
+  await loadTaskProgressForTodos()
 })
+
+watch(() => todoStore.todos, () => loadTaskProgressForTodos(), { deep: true })
 
 const handleAddTodo = async () => {
   if (newTodoTitle.value.trim()) {
@@ -30,6 +123,67 @@ const handleAddTodo = async () => {
 
 const goToDetail = (id: string) => {
   router.push(`/detail/${id}`)
+}
+
+/** 任务弹窗：当前打开的 todo 与已加载的 blocks */
+const taskPopupVisible = ref(false)
+const taskPopupTodoId = ref<string | null>(null)
+const taskPopupFolderName = ref('')
+const taskPopupTitle = ref('')
+const taskPopupBlocks = ref<EditorNode[]>([])
+
+const taskPopupTaskRows = computed(() => collectTaskItems(taskPopupBlocks.value))
+
+async function openTaskPopup(item: { id: string; folder_name: string; title: string }) {
+  const dataPath = settingsStore.config.data_path
+  if (!dataPath) return
+  try {
+    const content = await invoke<string>('get_todo_detail', {
+      dataPath,
+      folderName: item.folder_name
+    })
+    const blocks = JSON.parse(content) as EditorNode[]
+    taskPopupTodoId.value = item.id
+    taskPopupFolderName.value = item.folder_name
+    taskPopupTitle.value = item.title
+    taskPopupBlocks.value = Array.isArray(blocks) ? blocks : []
+    taskPopupVisible.value = true
+  } catch {
+    ElMessage.error(t('todo.taskLoadError') || '加载任务失败')
+  }
+}
+
+async function saveTaskPopupAndUpdateProgress() {
+  const id = taskPopupTodoId.value
+  const folderName = taskPopupFolderName.value
+  const dataPath = settingsStore.config.data_path
+  if (!id || !folderName || !dataPath) return
+  try {
+    const toSave = stripFileSizes(taskPopupBlocks.value)
+    await invoke('save_todo_detail', {
+      dataPath,
+      folderName,
+      content: JSON.stringify(toSave)
+    })
+    taskProgressMap.value = {
+      ...taskProgressMap.value,
+      [id]: countTaskProgress(taskPopupBlocks.value)
+    }
+  } catch {
+    ElMessage.error(t('todo.taskSaveError') || '保存失败')
+  }
+}
+
+function onTaskPopupCheckChange() {
+  void saveTaskPopupAndUpdateProgress()
+}
+
+function closeTaskPopup() {
+  taskPopupVisible.value = false
+  taskPopupTodoId.value = null
+  taskPopupFolderName.value = ''
+  taskPopupTitle.value = ''
+  taskPopupBlocks.value = []
 }
 </script>
 
@@ -66,6 +220,14 @@ const goToDetail = (id: string) => {
           @change="todoStore.saveTodos()"
         />
         <span
+          v-if="(taskProgressMap[item.id]?.total ?? 0) > 0"
+          class="task-progress clickable"
+          :title="t('todo.taskProgress')"
+          @click.stop="openTaskPopup(item)"
+        >
+          {{ taskProgressMap[item.id].done }}/{{ taskProgressMap[item.id].total }}
+        </span>
+        <span
           class="title"
           :class="{ completed: item.status === 'completed' }"
           @click="goToDetail(item.id)"
@@ -82,6 +244,29 @@ const goToDetail = (id: string) => {
         </el-button>
       </div>
     </el-scrollbar>
+
+    <el-dialog
+      v-model="taskPopupVisible"
+      :title="taskPopupTitle"
+      width="360px"
+      class="task-popup-dialog"
+      destroy-on-close
+      @close="closeTaskPopup"
+    >
+      <div class="task-popup-list">
+        <div
+          v-for="(row, index) in taskPopupTaskRows"
+          :key="row.node.id ?? index"
+          class="task-popup-row"
+        >
+          <el-checkbox
+            :model-value="row.node.checked"
+            @update:model-value="(val: boolean) => { row.node.checked = val; onTaskPopupCheckChange() }"
+          />
+          <span class="task-popup-label" :class="{ completed: row.node.checked }">{{ row.label }}</span>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -118,9 +303,54 @@ const goToDetail = (id: string) => {
   gap: 10px;
 }
 
+.task-progress {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--app-text-color);
+  opacity: 0.8;
+}
+
+.task-progress.clickable {
+  cursor: pointer;
+}
+
+.task-progress.clickable:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.task-popup-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.task-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--app-border-color);
+}
+
+.task-popup-row:last-child {
+  border-bottom: none;
+}
+
+.task-popup-label {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.task-popup-label.completed {
+  text-decoration: line-through;
+  color: #999;
+}
+
 .title {
   flex: 1;
   cursor: pointer;
+  min-width: 0;
 }
 
 .title.completed {

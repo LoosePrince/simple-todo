@@ -10,7 +10,10 @@
     "todo": {
         "listTitle": "代办事项",
         "placeholder": "添加新的代办事项...",
-        "detailTitle": "代办详情"
+        "detailTitle": "代办详情",
+        "taskProgress": "任务进度",
+        "taskLoadError": "加载任务失败",
+        "taskSaveError": "保存失败"
     },
     "detail": {
         "saved": "已保存",
@@ -44,6 +47,7 @@
         "toolbarRedo": "重做",
         "toolbarInsertImage": "插入图片",
         "toolbarInsertFile": "插入文件",
+        "toolbarInsertTask": "插入任务",
         "bubbleBold": "加粗",
         "bubbleItalic": "斜体",
         "bubbleColor": "文字颜色"

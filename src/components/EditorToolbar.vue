@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { AlignCenter, AlignLeft, AlignRight, Bold, FilePlus, Image as ImageIcon, Italic, List, Redo2, Undo2 } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, Bold, FilePlus, Image as ImageIcon, Italic, List, ListTodo, Redo2, Undo2 } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const emit = defineEmits(['command', 'insert-image', 'insert-file', 'mousedown'])
+const emit = defineEmits(['command', 'insert-image', 'insert-file', 'insert-task', 'mousedown'])
 
 const commands = [
   { icon: Bold, key: 'toolbarBold', cmd: 'bold' },
@@ -81,6 +81,11 @@ onBeforeUnmount(() => {
       <el-tooltip v-for="c in commands" :key="c.cmd" :content="t('editor.' + c.key)" placement="top" popper-class="editor-tooltip-nohit">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('command', c.cmd)">
           <component :is="c.icon" :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarInsertTask')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-task')">
+          <ListTodo :size="16" />
         </el-button>
       </el-tooltip>
     </div>

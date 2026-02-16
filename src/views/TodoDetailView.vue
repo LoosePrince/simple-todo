@@ -1,20 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useTodoStore } from '../store/todo'
-import { useSettingsStore } from '../store/settings'
-import { invoke } from '@tauri-apps/api/core'
-import { readFile, writeFile, mkdir, stat, readDir, remove } from '@tauri-apps/plugin-fs'
-import { join } from '@tauri-apps/api/path'
-import { ElMessage } from 'element-plus'
-import { useI18n } from 'vue-i18n'
-import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
-import { convertFileSrc } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { join } from '@tauri-apps/api/path'
+import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { mkdir, readDir, readFile, remove, stat, writeFile } from '@tauri-apps/plugin-fs'
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { ElMessage } from 'element-plus'
 import { CheckCircle, CircleAlert } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import AdvancedEditor, { type EditorNode } from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
+import { useSettingsStore } from '../store/settings'
+import { useTodoStore } from '../store/todo'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -35,9 +34,22 @@ const contextMenu = ref<{ x: number; y: number; type: 'image' | 'file'; assetPat
 const menuPosition = ref({ left: 0, top: 0 })
 const contextMenuRef = ref<HTMLElement | null>(null)
 const EDGE_PAD = 8
-/** 最近一次成功保存时的内容快照，用于判断是否脏与自动保存后更新 */
+/** 最近一次成功保存时的内容快照，用于判断是否脏与自动保存后更新（不包含 fileSize，文件大小从磁盘读取） */
 const lastSavedJson = ref<string>('')
-const isDirty = computed(() => JSON.stringify(blocks.value) !== lastSavedJson.value)
+/** 从节点树中移除 fileSize，保存/比较时不持久化文件大小 */
+function stripFileSizes(nodes: EditorNode[]): EditorNode[] {
+  return nodes.map((node) => {
+    if (node.type === 'file') {
+      const { fileSize: _, ...rest } = node
+      return rest as EditorNode
+    }
+    if ('children' in node && Array.isArray(node.children)) {
+      return { ...node, children: stripFileSizes(node.children) }
+    }
+    return node
+  })
+}
+const isDirty = computed(() => JSON.stringify(stripFileSizes(blocks.value)) !== lastSavedJson.value)
 
 watch(contextMenu, (val) => {
   if (!val) return
@@ -71,7 +83,7 @@ async function loadDetail() {
     blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
   }
   await backfillFileSizes()
-  lastSavedJson.value = JSON.stringify(blocks.value)
+  lastSavedJson.value = JSON.stringify(stripFileSizes(blocks.value))
 }
 
 let unlistenDetail: (() => void) | null = null
@@ -121,12 +133,13 @@ onUnmounted(() => {
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
 })
 
+/** 从磁盘按 assetPath 读取文件大小并更新到 blocks（不持久化，仅用于展示） */
 async function backfillFileSizes() {
   if (!todoItem) return
   const base = await join(settingsStore.config.data_path, todoItem.folder_name)
   const list: EditorNode[] = []
   for (const node of blocks.value) {
-    if (node.type === 'file' && node.assetPath && (node.fileSize == null || node.fileSize === 0)) {
+    if (node.type === 'file' && node.assetPath) {
       try {
         const fullPath = await join(base, node.assetPath)
         const info = await stat(fullPath)
@@ -236,12 +249,13 @@ const performSave = async (silent = false) => {
       }
     }
   } catch (_) {}
+  const toSave = stripFileSizes(blocks.value)
   await invoke('save_todo_detail', {
     dataPath: settingsStore.config.data_path,
     folderName: todoItem.folder_name,
-    content: JSON.stringify(blocks.value)
+    content: JSON.stringify(toSave)
   })
-  lastSavedJson.value = JSON.stringify(blocks.value)
+  lastSavedJson.value = JSON.stringify(toSave)
   if (!silent) ElMessage.success(t('common.saveSuccess') || '已保存')
   nextTick(() => editorRef.value?.restoreSelection?.())
 }
@@ -255,7 +269,7 @@ watch(blocks, () => {
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null
-    if (JSON.stringify(blocks.value) !== lastSavedJson.value) {
+    if (JSON.stringify(stripFileSizes(blocks.value)) !== lastSavedJson.value) {
       performSave(true)
     }
   }, AUTO_SAVE_DEBOUNCE_MS)
@@ -300,7 +314,6 @@ const handleFileUpload = async () => {
       id: crypto.randomUUID(),
       url: convertFileSrc(targetPath),
       fileName: displayName,
-      fileSize: fileData.byteLength,
       assetPath
     }
     const idx = insertAtIndexRef.value
@@ -314,6 +327,10 @@ const handleFileUpload = async () => {
     const msg = e instanceof Error ? e.message : String(e)
     ElMessage.error(`上传失败: ${msg}`)
   }
+}
+
+function handleInsertTask() {
+  editorRef.value?.insertTaskListAtSelection?.()
 }
 
 async function getAssetFullPath(assetPath: string): Promise<string> {
@@ -404,7 +421,7 @@ const handleDrop = async (e: DragEvent) => {
         url: convertFileSrc(targetPath),
         assetPath,
         fileName: isImage ? undefined : file.name,
-        ...(isImage ? { widthPercent: 100, align: 'left' as const } : { fileSize: file.size })
+        ...(isImage ? { widthPercent: 100, align: 'left' as const } : {})
       })
     }
   } catch (err) {
@@ -436,6 +453,7 @@ const handleDrop = async (e: DragEvent) => {
         @command="handleCommand"
         @insert-image="handleImageUpload"
         @insert-file="handleFileUpload"
+        @insert-task="handleInsertTask"
       />
       <el-scrollbar class="editor-scroll">
         <AdvancedEditor
