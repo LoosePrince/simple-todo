@@ -37,6 +37,19 @@ export const useTodoStore = defineStore('todo', {
       }
     },
     async deleteTodo(id: string) {
+      const todo = this.todos.find(t => t.id === id)
+      if (todo) {
+        // 先删除对应的文件夹
+        try {
+          await invoke('delete_todo_folder', {
+            dataPath: this.dataPath,
+            folderName: todo.folder_name
+          })
+        } catch (e) {
+          console.error('删除待办文件夹失败:', e)
+          // 即使删除文件夹失败，也继续删除待办项
+        }
+      }
       this.todos = this.todos.filter(t => t.id !== id)
       await this.saveTodos()
     },

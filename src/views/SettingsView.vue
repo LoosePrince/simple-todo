@@ -4,11 +4,88 @@ import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, FolderOpen } from 'lucide-vue-next'
+import { ChevronLeft, FolderOpen, Search, Trash2 } from 'lucide-vue-next'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref } from 'vue'
 
 const { t } = useI18n()
 const settingsStore = useSettingsStore()
 const router = useRouter()
+
+interface OrphanFolder {
+  folder_name: string
+  size: number
+}
+
+const orphanTodosVisible = ref(false)
+const orphanTodos = ref<OrphanFolder[]>([])
+const orphanTodosLoading = ref(false)
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+}
+
+async function findOrphanTodos() {
+  orphanTodosLoading.value = true
+  try {
+    const result = await invoke<OrphanFolder[]>('find_orphan_todo_folders', {
+      dataPath: settingsStore.config.data_path
+    })
+    orphanTodos.value = result
+    orphanTodosVisible.value = true
+  } catch (e) {
+    ElMessage.error(`查找失败: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    orphanTodosLoading.value = false
+  }
+}
+
+async function deleteOrphanFolder(folderName: string) {
+  try {
+    await invoke('delete_todo_folder', {
+      dataPath: settingsStore.config.data_path,
+      folderName
+    })
+    orphanTodos.value = orphanTodos.value.filter(f => f.folder_name !== folderName)
+    ElMessage.success(t('settings.orphanTodosDeleteSuccess'))
+  } catch (e) {
+    ElMessage.error(`${t('settings.orphanTodosDeleteError')}: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+async function deleteAllOrphanTodos() {
+  try {
+    await ElMessageBox.confirm(
+      t('settings.orphanTodosDeleteConfirm'),
+      t('settings.orphanTodosTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel')
+      }
+    )
+    
+    for (const folder of orphanTodos.value) {
+      try {
+        await invoke('delete_todo_folder', {
+          dataPath: settingsStore.config.data_path,
+          folderName: folder.folder_name
+        })
+      } catch (e) {
+        console.error(`删除文件夹失败: ${folder.folder_name}`, e)
+      }
+    }
+    
+    orphanTodos.value = []
+    ElMessage.success(t('settings.orphanTodosDeleteSuccess'))
+  } catch {
+    // 用户取消
+  }
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleSave() {
@@ -154,7 +231,46 @@ const handlePickFolder = async () => {
           </template>
         </el-input>
       </el-form-item>
+
+      <el-form-item>
+        <el-button type="warning" @click="findOrphanTodos" :loading="orphanTodosLoading">
+          <Search :size="16" style="margin-right: 4px" />
+          {{ t('settings.findOrphanTodos') }}
+        </el-button>
+      </el-form-item>
     </el-form>
+
+    <el-dialog
+      v-model="orphanTodosVisible"
+      :title="t('settings.orphanTodosTitle')"
+      width="600px"
+    >
+      <div v-if="orphanTodos.length === 0" class="orphan-empty">
+        {{ t('settings.orphanTodosEmpty') }}
+      </div>
+      <div v-else>
+        <div class="orphan-header">
+          <span>{{ t('settings.orphanTodosSize') }}</span>
+          <el-button type="danger" size="small" @click="deleteAllOrphanTodos">
+            <Trash2 :size="14" style="margin-right: 4px" />
+            {{ t('settings.orphanTodosDeleteAll') }}
+          </el-button>
+        </div>
+        <el-scrollbar max-height="400px">
+          <div class="orphan-list">
+            <div v-for="folder in orphanTodos" :key="folder.folder_name" class="orphan-item">
+              <div class="orphan-item-info">
+                <span class="orphan-folder-name">{{ folder.folder_name }}</span>
+                <span class="orphan-size">{{ formatSize(folder.size) }}</span>
+              </div>
+              <el-button type="danger" size="small" @click="deleteOrphanFolder(folder.folder_name)">
+                <Trash2 :size="14" />
+              </el-button>
+            </div>
+          </div>
+        </el-scrollbar>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -204,6 +320,70 @@ const handlePickFolder = async () => {
 }
 
 .dark .color-picker-item span {
+  color: #aaa;
+}
+
+.orphan-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: #999;
+}
+
+.orphan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dark .orphan-header {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.orphan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.orphan-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark .orphan-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.orphan-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.orphan-folder-name {
+  font-size: 13px;
+  font-family: monospace;
+  word-break: break-all;
+  color: var(--app-text-color);
+}
+
+.orphan-size {
+  font-size: 12px;
+  color: #666;
+}
+
+.dark .orphan-size {
   color: #aaa;
 }
 </style>

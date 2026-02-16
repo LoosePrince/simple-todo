@@ -37,7 +37,15 @@
         "dataPath": "Data Storage Path",
         "selectFolder": "Select",
         "launchAtLogin": "Launch at login",
-        "launchAtLoginDesc": "Start and open window on system boot"
+        "launchAtLoginDesc": "Start and open window on system boot",
+        "findOrphanTodos": "Find Orphan Todos",
+        "orphanTodosTitle": "Orphan Todo Folders",
+        "orphanTodosEmpty": "No orphan todo folders found",
+        "orphanTodosSize": "Size",
+        "orphanTodosDeleteAll": "Delete All",
+        "orphanTodosDeleteConfirm": "Are you sure to delete all orphan todo folders? This action cannot be undone.",
+        "orphanTodosDeleteSuccess": "Deleted successfully",
+        "orphanTodosDeleteError": "Delete failed"
     },
     "editor": {
         "toolbarParagraph": "Paragraph",

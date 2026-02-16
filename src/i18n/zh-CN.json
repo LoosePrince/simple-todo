@@ -37,7 +37,15 @@
         "dataPath": "数据保存位置",
         "selectFolder": "选择",
         "launchAtLogin": "开机启动",
-        "launchAtLoginDesc": "开机自启并打开窗口"
+        "launchAtLoginDesc": "开机自启并打开窗口",
+        "findOrphanTodos": "查找未知待办",
+        "orphanTodosTitle": "未知待办文件夹",
+        "orphanTodosEmpty": "未发现未知待办文件夹",
+        "orphanTodosSize": "占用空间",
+        "orphanTodosDeleteAll": "一键删除全部",
+        "orphanTodosDeleteConfirm": "确认删除所有未知待办文件夹吗？此操作不可恢复。",
+        "orphanTodosDeleteSuccess": "删除成功",
+        "orphanTodosDeleteError": "删除失败"
     },
     "editor": {
         "toolbarParagraph": "正文",

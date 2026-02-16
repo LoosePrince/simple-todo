@@ -104,6 +104,78 @@ fn create_todo_folder(data_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn delete_todo_folder(data_path: String, folder_name: String) -> Result<(), String> {
+    let folder_path = Path::new(&data_path).join(&folder_name);
+    if folder_path.exists() {
+        fs::remove_dir_all(&folder_path).map_err(|e| format!("删除文件夹失败: {}", e))?;
+    }
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct OrphanFolder {
+    folder_name: String,
+    size: u64,
+}
+
+fn calculate_dir_size(path: &Path) -> u64 {
+    let mut total_size = 0u64;
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let entry_path = entry.path();
+                if entry_path.is_dir() {
+                    total_size += calculate_dir_size(&entry_path);
+                } else if let Ok(metadata) = entry_path.metadata() {
+                    total_size += metadata.len();
+                }
+            }
+        }
+    }
+    total_size
+}
+
+#[tauri::command]
+fn find_orphan_todo_folders(data_path: String) -> Result<Vec<OrphanFolder>, String> {
+    let data_dir = Path::new(&data_path);
+    if !data_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    // 获取所有有效的待办文件夹名
+    let todos = get_todos(data_path.clone());
+    let valid_folders: std::collections::HashSet<String> = todos
+        .iter()
+        .map(|todo| todo.folder_name.clone())
+        .collect();
+
+    let mut orphan_folders = Vec::new();
+
+    // 扫描数据目录下的所有文件夹
+    if let Ok(entries) = fs::read_dir(data_dir) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(folder_name) = path.file_name().and_then(|n| n.to_str()) {
+                        // 检查是否在有效文件夹列表中
+                        if !valid_folders.contains(folder_name) {
+                            let size = calculate_dir_size(&path);
+                            orphan_folders.push(OrphanFolder {
+                                folder_name: folder_name.to_string(),
+                                size,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(orphan_folders)
+}
+
+#[tauri::command]
 fn save_todo_detail(app: tauri::AppHandle, data_path: String, folder_name: String, content: String) -> Result<(), String> {
     let detail_path = Path::new(&data_path).join(&folder_name).join("content.json");
     fs::write(detail_path, content).map_err(|e| e.to_string())?;
@@ -257,11 +329,13 @@ fn main() {
             get_todos,
             save_todos,
             create_todo_folder,
+            delete_todo_folder,
             save_todo_detail,
             get_todo_detail,
             move_data,
             get_file_icon,
-            create_new_window
+            create_new_window,
+            find_orphan_todo_folders
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
