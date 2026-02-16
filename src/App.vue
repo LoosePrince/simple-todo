@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
+import { onMounted, onUnmounted } from 'vue'
+import TitleBar from './components/TitleBar.vue'
 import { useSettingsStore } from './store/settings'
 import { useTodoStore } from './store/todo'
-import TitleBar from './components/TitleBar.vue'
 
 const settingsStore = useSettingsStore()
 const todoStore = useTodoStore()
@@ -49,6 +49,8 @@ onUnmounted(() => {
   --app-font-size: 14px;
   --app-text-color: #333333;
   --app-bg-color: #ffffff;
+  --app-surface-color: #ffffff;
+  --app-border-color: rgba(0, 0, 0, 0.1);
   --file-card-bg: rgba(0, 0, 0, 0.05);
   --file-card-border: rgba(0, 0, 0, 0.1);
   --file-size-color: rgba(0, 0, 0, 0.5);
@@ -58,11 +60,13 @@ onUnmounted(() => {
 html.dark {
   --app-text-color: #e5e5e5;
   --app-bg-color: #1a1a1a;
+  --app-surface-color: #2a2a2a;
+  --app-border-color: #444;
   --file-card-bg: rgba(255, 255, 255, 0.08);
   --file-card-border: rgba(255, 255, 255, 0.15);
   --file-size-color: rgba(255, 255, 255, 0.6);
-  background-color: #1a1a1a;
-  color: #e5e5e5;
+  background-color: var(--app-bg-color);
+  color: var(--app-text-color);
 }
 
 body {
@@ -123,20 +127,9 @@ body {
 .dark .el-input__wrapper,
 .dark .el-textarea__inner,
 .dark .el-select__wrapper {
-  background-color: #2a2a2a !important;
-  color: #e5e5e5 !important;
-  box-shadow: 0 0 0 1px #444 inset !important;
-}
-
-.dark .el-button:not(.el-button--primary) {
-  background-color: #333 !important;
-  border-color: #444 !important;
-  color: #e5e5e5 !important;
-}
-
-.dark .el-button:not(.el-button--primary):hover {
-  background-color: #444 !important;
-  border-color: #555 !important;
+  background-color: var(--app-surface-color) !important;
+  color: var(--app-text-color) !important;
+  box-shadow: 0 0 0 1px var(--app-border-color) inset !important;
 }
 
 .app-content {

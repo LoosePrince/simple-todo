@@ -497,6 +497,10 @@ const handleDrop = async (e: DragEvent) => {
   min-width: 0;
 }
 
+.dark .header {
+  border-bottom-color: rgba(255,255,255,0.08);
+}
+
 .header-left {
   display: flex;
   align-items: center;

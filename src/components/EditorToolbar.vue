@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { AlignCenter, AlignLeft, AlignRight, Bold, FilePlus, Image as ImageIcon, Italic, List, Redo2, Undo2 } from 'lucide-vue-next'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bold, Italic, List, Image as ImageIcon, FilePlus, AlignLeft, AlignCenter, AlignRight, Undo2, Redo2 } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const emit = defineEmits(['command', 'insert-image', 'insert-file', 'mousedown'])
@@ -156,42 +156,53 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  padding: 8px 12px;
-  background: var(--app-bg-color);
-  border-bottom: 1px solid rgba(0,0,0,0.1);
-  gap: 8px 12px;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  gap: 2px 6px;
   position: sticky;
   top: 0;
   z-index: 100;
   min-width: 0;
+  transition: background 0.2s;
+}
+
+.editor-toolbar:hover {
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .dark .editor-toolbar {
-  border-color: rgba(255,255,255,0.1);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .editor-toolbar:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .toolbar-group {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
 .toolbar-divider {
   width: 1px;
-  height: 20px;
-  background: rgba(0,0,0,0.1);
+  height: 16px;
+  margin: 0 2px;
+  background: rgba(0,0,0,0.12);
   flex-shrink: 0;
 }
 
 @media (max-width: 480px) {
   .editor-toolbar {
-    padding: 6px 10px;
-    gap: 6px 10px;
+    padding: 3px 6px;
+    gap: 2px 4px;
   }
   .toolbar-style-btn {
-    min-width: 28px;
-    height: 26px;
-    padding: 0 6px;
+    min-width: 26px;
+    height: 24px;
+    padding: 0 5px;
     font-size: 11px;
   }
 }
@@ -201,33 +212,45 @@ onBeforeUnmount(() => {
 }
 
 .toolbar-style-btn {
-  min-width: 32px;
-  height: 28px;
-  padding: 0 8px;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
   font-size: 12px;
   font-weight: 600;
   font-family: var(--app-font-family);
   color: var(--app-text-color);
-  background: rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.2s;
 }
 
 .toolbar-style-btn:hover {
-  background: rgba(0, 0, 0, 0.1);
-  border-color: rgba(0, 0, 0, 0.15);
-}
-
-.dark .toolbar-style-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .dark .toolbar-style-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.editor-toolbar :deep(.el-button.is-circle) {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  color: var(--app-text-color);
+  transition: background 0.2s;
+}
+
+.editor-toolbar :deep(.el-button.is-circle:hover) {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dark .editor-toolbar :deep(.el-button.is-circle:hover) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .bubble-menu {
