@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { AlignCenter, AlignLeft, AlignRight, Bold, FilePlus, Image as ImageIcon, Italic, List, ListTodo, Redo2, Undo2 } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, Bold, Code, FilePlus, Image as ImageIcon, Italic, List, ListTodo, Redo2, SquareChevronDown, Undo2 } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const emit = defineEmits(['command', 'insert-image', 'insert-file', 'insert-task', 'mousedown'])
+const emit = defineEmits(['command', 'insert-image', 'insert-file', 'insert-task', 'insert-code', 'insert-fold', 'mousedown'])
 
 const commands = [
   { icon: Bold, key: 'toolbarBold', cmd: 'bold' },
@@ -83,15 +83,19 @@ const updateBubbleMenu = () => {
   
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-    // 检查是否有颜色选择器相关的元素在焦点
-    const pickerPanel = document.querySelector('.el-color-picker__panel')
-    if (pickerPanel && pickerPanel.contains(activeElement)) {
-      return
-    }
     bubbleMenuVisible.value = false
     return
   }
+
+  // 确保选区在编辑器容器内
   const range = selection.getRangeAt(0)
+  const commonAncestor = range.commonAncestorContainer
+  const editorEl = document.querySelector('.advanced-editor')
+  if (!editorEl || !editorEl.contains(commonAncestor)) {
+    bubbleMenuVisible.value = false
+    return
+  }
+
   const rect = range.getBoundingClientRect()
   const vw = window.innerWidth
   const scrollY = window.scrollY
@@ -185,8 +189,22 @@ function onBubbleColorActiveChange(val: string | null) {
 // 监听颜色选择器面板的显示/隐藏
 let colorPickerObserver: MutationObserver | null = null
 
+const handleWindowMouseDown = (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  if (bubbleMenuVisible.value && !target.closest('.bubble-menu') && !target.closest('.el-color-picker') && !target.closest('.el-color-picker__panel')) {
+    // 如果没有选中文本，或者点击了非编辑器区域，关闭菜单
+    setTimeout(() => {
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) {
+        bubbleMenuVisible.value = false
+      }
+    }, 10)
+  }
+}
+
 onMounted(() => {
   document.addEventListener('selectionchange', updateBubbleMenu)
+  window.addEventListener('mousedown', handleWindowMouseDown)
   
   // 监听颜色选择器面板的显示
   colorPickerObserver = new MutationObserver(() => {
@@ -201,12 +219,10 @@ onMounted(() => {
         }
       }
     } else {
-      // 面板关闭时延迟重置（给 change 事件时间执行）
-      setTimeout(() => {
-        if (!document.querySelector('.el-color-picker__panel')) {
-          isColorPickerOpen.value = false
-        }
-      }, 100)
+      // 面板关闭
+      isColorPickerOpen.value = false
+      // 触发一次菜单更新（以防在面板打开期间取消了选区）
+      updateBubbleMenu()
     }
   })
   
@@ -218,6 +234,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('selectionchange', updateBubbleMenu)
+  window.removeEventListener('mousedown', handleWindowMouseDown)
   if (colorPickerObserver) {
     colorPickerObserver.disconnect()
     colorPickerObserver = null
@@ -289,6 +306,16 @@ onBeforeUnmount(() => {
       <el-tooltip :content="t('editor.toolbarInsertFile')" placement="top" popper-class="editor-tooltip-nohit">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-file')">
           <FilePlus :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarInsertCode')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-code')">
+          <Code :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarInsertFold')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-fold')">
+          <SquareChevronDown :size="16" />
         </el-button>
       </el-tooltip>
     </div>

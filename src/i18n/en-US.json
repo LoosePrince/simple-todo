@@ -54,6 +54,12 @@
         "toolbarInsertImage": "Insert image",
         "toolbarInsertFile": "Insert file",
         "toolbarInsertTask": "Insert task",
+        "toolbarInsertCode": "Insert code block",
+        "toolbarInsertFold": "Insert fold block",
+        "codeCopy": "Copy code",
+        "copySuccess": "Copied to clipboard",
+        "foldTitle": "Fold Block",
+        "foldInsertAfter": "Insert new line after",
         "bubbleBold": "Bold",
         "bubbleItalic": "Italic",
         "bubbleColor": "Text color"

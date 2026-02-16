@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core';
-import { AlignCenter, AlignLeft, AlignRight } from 'lucide-vue-next';
+import { ElMessage } from 'element-plus';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github.css';
+import { AlignCenter, AlignLeft, AlignRight, Copy } from 'lucide-vue-next';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 /** 树形节点：类似 HTML 序列化为 JSON，支持子节点，加粗/斜体等内联格式保存在子节点中 */
 export type EditorNode =
@@ -19,6 +23,8 @@ export type EditorNode =
   | { type: 'taskItem'; id?: string; checked: boolean; children: EditorNode[] }
   | { type: 'image'; id: string; url: string; assetPath?: string; widthPercent?: number; align?: 'left' | 'center' | 'right' }
   | { type: 'file'; id: string; url: string; fileName?: string; fileSize?: number; assetPath?: string; align?: 'left' | 'center' | 'right' }
+  | { type: 'code'; id: string; content: string; language?: string }
+  | { type: 'fold'; id: string; folded: boolean; children: EditorNode[] }
 
 const props = defineProps<{
   modelValue: EditorNode[]
@@ -48,6 +54,10 @@ const IMAGE_TOOLBAR_APPROX_WIDTH = 220
 const FILE_TOOLBAR_APPROX_HEIGHT = 44
 const FILE_TOOLBAR_APPROX_WIDTH = 180
 const IMAGE_TOOLBAR_PADDING = 8
+
+const { t } = useI18n()
+const foldTitleText = computed(() => t('editor.foldTitle'))
+const foldInsertAfterText = computed(() => t('editor.foldInsertAfter'))
 
 const genId = () => crypto.randomUUID()
 
@@ -83,6 +93,18 @@ const nodeToHtml = (node: EditorNode): string => {
     const alignStyle = align !== 'left' ? `text-align: ${align};` : ''
     const alignData = align !== 'left' ? ` data-align="${align}"` : ''
     return `<span class="editor-block file-block-wrapper" data-id="${node.id}" data-url="${escapeHtml(url)}" data-asset-path="${escapeHtml(ap)}"${alignData} style="display: block; ${alignStyle} margin: 8px 0;"><span class="file-block" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card" contenteditable="false"><span class="file-icon"${extAttr}><span class="file-icon-fallback">📄</span><img class="file-icon-img" alt=""></span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span><br class="asset-trailing-br"></span>`
+  }
+  if (node.type === 'code') {
+    const lang = node.language || 'text'
+    const insertLabel = escapeHtml(foldInsertAfterText.value)
+    const copyLabel = escapeHtml(t('editor.codeCopy'))
+    return `<div class="editor-block code-block-wrapper" data-id="${node.id}" data-language="${escapeHtml(lang)}" contenteditable="false" style="margin: 12px 0;"><div class="code-card"><div class="code-header"><span class="code-lang">${escapeHtml(lang)}</span><div class="code-header-btns"><button type="button" class="fold-copy-btn" title="${copyLabel}"><span class="copy-icon-placeholder"></span></button><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div></div><div class="code-editor" contenteditable="true" spellcheck="false">${escapeHtml(node.content)}</div></div></div>`
+  }
+  if (node.type === 'fold') {
+    const folded = node.folded ?? false
+    const title = escapeHtml(foldTitleText.value)
+    const insertLabel = escapeHtml(foldInsertAfterText.value)
+    return `<div class="editor-block fold-block" data-id="${node.id}" data-folded="${folded}" contenteditable="false" style="margin: 20px 0;"><div class="fold-line-top"></div><div class="fold-header"><button type="button" class="fold-toggle-btn">${folded ? '▶' : '▼'}</button><span class="fold-title">${title}</span><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div><div class="fold-content" contenteditable="true" style="display: ${folded ? 'none' : 'block'};">${(node.children || []).map(nodeToHtml).join('') || '<p class="editor-block"><br></p>'}</div><div class="fold-line-bottom"></div></div>`
   }
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
   if (node.type === 'em') return `<em>${(node.children || []).map(nodeToHtml).join('')}</em>`
@@ -185,10 +207,13 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
         align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
       })
     } else if (child.classList.contains('file-block')) {
+      // file-block 可能在 file-block-wrapper 内部，需要向上查找 wrapper 获取 assetPath
+      const wrapper = child.closest('.file-block-wrapper') as HTMLElement | null
       const name = child.querySelector('.file-name')?.textContent ?? ''
-      const url = child.getAttribute('data-url') ?? ''
-      const ap = child.getAttribute('data-asset-path') ?? ''
-      out.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined })
+      const url = wrapper?.getAttribute('data-url') ?? child.getAttribute('data-url') ?? ''
+      const ap = wrapper?.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
+      const align = wrapper ? getBlockAlign(wrapper) : 'left'
+      out.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined, ...(align !== 'left' ? { align } : {}) })
     } else if (child.classList.contains('file-block-wrapper')) {
       const fileBlock = child.querySelector('.file-block') as HTMLElement | null
       const name = fileBlock?.querySelector('.file-name')?.textContent ?? ''
@@ -196,6 +221,16 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
       const ap = child.getAttribute('data-asset-path') ?? ''
       const align = getBlockAlign(child)
       out.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined, ...(align !== 'left' ? { align } : {}) })
+    } else if (child.classList.contains('code-block-wrapper')) {
+      const codeEditor = child.querySelector('.code-editor')
+      const content = codeEditor?.textContent ?? ''
+      const lang = child.getAttribute('data-language') ?? 'text'
+      out.push({ type: 'code', id, content, language: lang })
+    } else if (child.classList.contains('fold-block')) {
+      const folded = child.getAttribute('data-folded') === 'true'
+      const contentEl = child.querySelector('.fold-content') as HTMLElement | null
+      const children = contentEl ? domToNodesFromContainer(contentEl) : []
+      out.push({ type: 'fold', id, folded, children })
     } else if (child.classList.contains('task-item-checkbox')) {
       // skip checkbox, it is reflected in data-checked on the li
     } else if (child.classList.contains('task-item-content')) {
@@ -245,9 +280,12 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
 
 const domToNodes = (): EditorNode[] => {
   if (!editorRef.value) return []
+  return domToNodesFromContainer(editorRef.value)
+}
+
+function domToNodesFromContainer(container: HTMLElement): EditorNode[] {
   const roots: EditorNode[] = []
-  const el = editorRef.value
-  for (const node of el.childNodes) {
+  for (const node of container.childNodes) {
     if (node.nodeType === Node.TEXT_NODE) {
       const v = (node.textContent ?? '').replace(/\u00A0/g, ' ').trim()
       if (v) roots.push({ type: 'p', id: genId(), children: [{ type: 'text', value: v }] })
@@ -300,15 +338,27 @@ const domToNodes = (): EditorNode[] => {
         roots.push(...collectTrailingBlocksFromFileBlock(child, fileCard))
       }
     } else if (child.classList.contains('file-block')) {
-      // 兼容旧格式（没有 wrapper）
+      // file-block 可能在 file-block-wrapper 内部，需要向上查找 wrapper 获取 assetPath
+      const wrapper = child.closest('.file-block-wrapper') as HTMLElement | null
       const fileCard = child.querySelector('.file-card')
       const name = child.querySelector('.file-name')?.textContent ?? ''
-      const url = child.getAttribute('data-url') ?? ''
-      const ap = child.getAttribute('data-asset-path') ?? ''
-      roots.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined })
+      const url = wrapper?.getAttribute('data-url') ?? child.getAttribute('data-url') ?? ''
+      const ap = wrapper?.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
+      const align = wrapper ? getBlockAlign(wrapper) : 'left'
+      roots.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined, ...(align !== 'left' ? { align } : {}) })
       if (fileCard) {
         roots.push(...collectTrailingBlocksFromFileBlock(child, fileCard))
       }
+    } else if (child.classList.contains('code-block-wrapper')) {
+      const codeEditor = child.querySelector('.code-editor')
+      const content = codeEditor?.textContent ?? ''
+      const lang = child.getAttribute('data-language') ?? 'text'
+      roots.push({ type: 'code', id, content, language: lang })
+    } else if (child.classList.contains('fold-block')) {
+      const folded = child.getAttribute('data-folded') === 'true'
+      const contentEl = child.querySelector('.fold-content') as HTMLElement | null
+      const children = contentEl ? domToNodesFromContainer(contentEl) : []
+      roots.push({ type: 'fold', id, folded, children })
     } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
       const align = getBlockAlign(child)
       roots.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(child) })
@@ -332,7 +382,7 @@ const domToNodes = (): EditorNode[] => {
       roots.push({ type: tag as 'ul' | 'ol', id, children: listChildren })
     } else if (tag === 'div') {
       const fromDiv = domToNodesFromContainer(child)
-      roots.push(...(fromDiv.length > 0 ? fromDiv : [{ type: 'p' as const, id: genId(), children: [] }]))
+      roots.push(...fromDiv)
     } else if (tag === 'br') {
       roots.push({ type: 'p', id: genId(), children: [] })
     } else {
@@ -343,104 +393,11 @@ const domToNodes = (): EditorNode[] => {
   return roots.length > 0 ? roots : [{ type: 'p', id: genId(), children: [] }]
 }
 
-function domToNodesFromContainer(div: HTMLElement): EditorNode[] {
-  const roots: EditorNode[] = []
-  for (const node of div.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const v = (node.textContent ?? '').replace(/\u00A0/g, ' ').trim()
-      if (v) roots.push({ type: 'p', id: genId(), children: [{ type: 'text', value: v }] })
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement
-      const tag = el.tagName.toLowerCase()
-      const id = el.getAttribute('data-id') ?? genId()
-      if (el.classList.contains('image-block-wrapper')) {
-        const img = el.querySelector('img.image-block')
-        if (img) {
-          const mid = img.getAttribute('data-id') ?? id
-          const url = (img as HTMLImageElement).src
-          const wp = img.getAttribute('data-width-percent')
-          const al = img.getAttribute('data-align')
-          const ap = img.getAttribute('data-asset-path') ?? el.getAttribute('data-asset-path') ?? ''
-          roots.push({
-            type: 'image',
-            id: mid,
-            url,
-            assetPath: ap || undefined,
-            widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
-            align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
-          })
-          roots.push(...collectTrailingBlocksFromWrapper(el, img))
-        }
-      } else if (tag === 'img') {
-        const wp = el.getAttribute('data-width-percent')
-        const al = el.getAttribute('data-align')
-        const ap = el.getAttribute('data-asset-path') ?? ''
-        roots.push({
-          type: 'image',
-          id,
-          url: (el as HTMLImageElement).src,
-          assetPath: ap || undefined,
-          widthPercent: wp != null && wp !== '' ? parseInt(wp, 10) : undefined,
-          align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
-        })
-      } else if (el.classList.contains('file-block-wrapper')) {
-        const fileBlock = el.querySelector('.file-block') as HTMLElement | null
-        const fileCard = fileBlock?.querySelector('.file-card') as HTMLElement | null
-        const name = fileBlock?.querySelector('.file-name')?.textContent ?? ''
-        const url = el.getAttribute('data-url') ?? ''
-        const ap = el.getAttribute('data-asset-path') ?? ''
-        const align = getBlockAlign(el)
-        roots.push({ type: 'file', id, url, fileName: name, assetPath: ap || undefined, ...(align !== 'left' ? { align } : {}) })
-        if (fileCard) {
-          roots.push(...collectTrailingBlocksFromFileBlock(el, fileCard))
-        }
-      } else if (el.classList.contains('file-block')) {
-        // 兼容旧格式（没有 wrapper）
-        const fileCard = el.querySelector('.file-card')
-        const name = el.querySelector('.file-name')?.textContent ?? ''
-        const ap = el.getAttribute('data-asset-path') ?? ''
-        roots.push({ type: 'file', id, url: el.getAttribute('data-url') ?? '', fileName: name, assetPath: ap || undefined })
-        if (fileCard) {
-          roots.push(...collectTrailingBlocksFromFileBlock(el, fileCard))
-        }
-      } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
-        const align = getBlockAlign(el)
-        roots.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(el) })
-      } else if (el.classList.contains('task-list')) {
-        const taskListChildren: EditorNode[] = []
-        el.querySelectorAll(':scope > li.task-item').forEach(liEl => {
-          const li = liEl as HTMLElement
-          const contentEl = li.querySelector('.task-item-content') as HTMLElement | null
-          const children = contentEl ? collectChildren(contentEl) : []
-          const checked = li.getAttribute('data-checked') === 'true' || (li.querySelector('.task-item-checkbox') as HTMLInputElement | null)?.checked === true
-          taskListChildren.push({ type: 'taskItem', id: li.getAttribute('data-id') ?? genId(), checked, children })
-        })
-        if (taskListChildren.length === 0) taskListChildren.push({ type: 'taskItem', id: genId(), checked: false, children: [] })
-        roots.push({ type: 'taskList', id: el.getAttribute('data-id') ?? genId(), children: taskListChildren })
-      } else if (tag === 'ul' || tag === 'ol') {
-        const listChildren: EditorNode[] = []
-        el.querySelectorAll(':scope > li').forEach(li => {
-          listChildren.push({ type: 'li', id: (li as HTMLElement).getAttribute('data-id') ?? genId(), children: collectChildren(li as HTMLElement) })
-        })
-        if (listChildren.length === 0) listChildren.push({ type: 'li', id: genId(), children: [] })
-        roots.push({ type: tag as 'ul' | 'ol', id, children: listChildren })
-      } else if (tag === 'div') roots.push(...domToNodesFromContainer(el))
-      else if (tag === 'br') roots.push({ type: 'p', id: genId(), children: [] })
-      else {
-        const text = el.textContent?.trim()
-        if (text) roots.push({ type: 'p', id: genId(), children: [{ type: 'text', value: text }] })
-      }
-    }
-  }
-  return roots.length > 0 ? roots : [{ type: 'p', id: genId(), children: [] }]
-}
-
 /** 收集图片 wrapper 内 img 之后的兄弟节点并序列化为块（解决在图片后直接输入时内容被丢的问题） */
 function collectTrailingBlocksFromWrapper(wrapper: HTMLElement, img: Element): EditorNode[] {
   const temp = document.createElement('div')
   let next: ChildNode | null = img.nextSibling
   while (next) {
-    // 跳过 trailing br（只是占位符，不应该被保存）
     if (next.nodeType === Node.ELEMENT_NODE && (next as HTMLElement).classList.contains('asset-trailing-br')) {
       next = next.nextSibling
       continue
@@ -457,7 +414,6 @@ function collectTrailingBlocksFromFileBlock(wrapper: HTMLElement, fileCard: Elem
   const temp = document.createElement('div')
   let next: ChildNode | null = fileCard.nextSibling
   while (next) {
-    // 跳过 trailing br（只是占位符，不应该被保存）
     if (next.nodeType === Node.ELEMENT_NODE && (next as HTMLElement).classList.contains('asset-trailing-br')) {
       next = next.nextSibling
       continue
@@ -505,13 +461,48 @@ function handlePaste(e: ClipboardEvent) {
     return
   }
 
-  // 仅文本：以纯文本形式插入
   e.preventDefault()
   if (!text) return
   insertPlainText(text)
 }
 
-/** 阻止在图片/文件块内部输入 */
+/** 获取当前光标所在的根级块索引及其容器 */
+function getInsertionContainer(): { container: HTMLElement | null, index: number } {
+  const sel = window.getSelection()
+  const editor = editorRef.value
+  if (!sel || sel.rangeCount === 0 || !editor) return { container: editor, index: -1 }
+  
+  const anchorNode = sel.anchorNode
+  if (!anchorNode) return { container: editor, index: -1 }
+
+  // 寻找最近的 contenteditable="true" 容器
+  let container: HTMLElement | null = null
+  let curr: Node | null = anchorNode
+  while (curr && curr !== editor) {
+    if (curr instanceof HTMLElement && curr.getAttribute('contenteditable') === 'true') {
+      container = curr
+      break
+    }
+    curr = curr.parentNode
+  }
+  
+  if (!container) container = editor
+
+  // 寻找容器内的根级块
+  let node: Node | null = anchorNode
+  while (node && node.parentNode !== container) node = node.parentNode
+  
+  if (!node) return { container, index: -1 }
+  
+  const kids = container.childNodes
+  for (let i = 0; i < kids.length; i++) {
+    if (kids[i] === node) return { container, index: i }
+  }
+  
+  return { container, index: -1 }
+}
+
+/** 阻止在资产块内部（非编辑器区域）输入 */
 function handleBeforeInput(e: Event) {
   const inputEvent = e as InputEvent
   const selection = window.getSelection()
@@ -520,32 +511,58 @@ function handleBeforeInput(e: Event) {
   const range = selection.getRangeAt(0)
   const container = range.commonAncestorContainer
   const containerEl = container.nodeType === Node.ELEMENT_NODE ? container as HTMLElement : container.parentElement as HTMLElement | null
-  const wrapper = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .file-block') as HTMLElement | null
+  
+  const innerEditable = containerEl?.closest('.code-editor, .fold-content')
+  
+  // 处理退格键：如果光标在资产块后的第一个字符，按退格键应该选中该资产块
+  if (inputEvent.inputType === 'deleteContentBackward' && range.collapsed && range.startOffset === 0 && !innerEditable) {
+    const info = getInsertionContainer()
+    const block = (info.index >= 0 && info.container) ? info.container.childNodes[info.index] : null
+    
+    if (block) {
+      const prev = block.previousSibling as HTMLElement | null
+      if (prev && (prev.classList.contains('image-block-wrapper') || 
+                   prev.classList.contains('file-block-wrapper') || 
+                   prev.classList.contains('code-block-wrapper') || 
+                   prev.classList.contains('fold-block'))) {
+        e.preventDefault()
+        const newRange = document.createRange()
+        newRange.selectNode(prev)
+        selection.removeAllRanges()
+        selection.addRange(newRange)
+        return
+      }
+    }
+  }
+
+  if (innerEditable) return
+
+  const wrapper = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .file-block, .code-block-wrapper, .fold-block') as HTMLElement | null
   
   if (!wrapper) return
   
   const img = wrapper.querySelector('img.image-block')
   const fileCard = wrapper.querySelector('.file-card')
+  const codeCard = wrapper.querySelector('.code-card')
+  const isFold = wrapper.classList.contains('fold-block')
   const trailingBr = wrapper.querySelector('.asset-trailing-br')
   
-  // 检查光标是否在图片/文件本身（img 或 file-card）内
-  const isInAsset = img?.contains(container) || fileCard?.contains(container)
+  const isInAssetStructure = img?.contains(container) || 
+                             fileCard?.contains(container) || 
+                             (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) ||
+                             (isFold && !containerEl?.closest('.fold-content'))
   
-  // 如果光标在图片/文件本身内，阻止输入
-  if (isInAsset) {
+  if (isInAssetStructure) {
     e.preventDefault()
     return
   }
   
-  // 如果光标在 trailing br 处或 wrapper 末尾（图片/文件后面），允许换行由 handleEnterKey 处理
   const isAtTrailingBrOrEnd = (trailingBr && (container === trailingBr || container.parentElement === trailingBr.parentElement)) ||
     (container === wrapper && range.startOffset >= (wrapper.childNodes.length || 1))
   if (isAtTrailingBrOrEnd) {
     if (inputEvent.inputType === 'insertLineBreak' || (inputEvent.inputType === 'insertText' && inputEvent.data === '\n')) {
-      // 允许换行，handleEnterKey 会处理（在 keydown 里插入新段落）
       return
     }
-    // 其他输入：阻止默认，插入新段落到 wrapper 后，移动光标并插入该字符
     e.preventDefault()
     const wrapperParent = wrapper.parentElement
     if (!wrapperParent) return
@@ -571,10 +588,8 @@ function handleBeforeInput(e: Event) {
     return
   }
   
-  // 如果光标在 wrapper 内但不在图片/文件本身和 trailing br，阻止输入
-  if (wrapper.contains(container) && !isInAsset && container !== trailingBr && container.parentElement !== trailingBr?.parentElement) {
+  if (wrapper.contains(container) && !isInAssetStructure && container !== trailingBr && container.parentElement !== trailingBr?.parentElement) {
     e.preventDefault()
-    // 将光标移到 wrapper 后面
     const nextSibling = wrapper.nextSibling
     if (nextSibling) {
       const newRange = document.createRange()
@@ -590,7 +605,7 @@ function handleBeforeInput(e: Event) {
   }
 }
 
-/** 处理 Enter 键：在图片/文件后面时插入新段落 */
+/** 处理 Enter 键：在资产后面时插入新段落 */
 function handleEnterKey(e: KeyboardEvent) {
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0 || !editorRef.value) return
@@ -598,25 +613,31 @@ function handleEnterKey(e: KeyboardEvent) {
   const range = selection.getRangeAt(0)
   const container = range.commonAncestorContainer
   const containerEl = container.nodeType === Node.ELEMENT_NODE ? container as HTMLElement : container.parentElement as HTMLElement | null
-  const wrapper = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .file-block') as HTMLElement | null
   
+  if (containerEl?.closest('.code-editor, .fold-content')) {
+    return
+  }
+
+  const wrapper = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .file-block, .code-block-wrapper, .fold-block') as HTMLElement | null
   if (!wrapper) return
   
   const img = wrapper.querySelector('img.image-block')
   const fileCard = wrapper.querySelector('.file-card')
+  const codeCard = wrapper.querySelector('.code-card')
+  const isFold = wrapper.classList.contains('fold-block')
   const trailingBr = wrapper.querySelector('.asset-trailing-br')
   
-  // 光标在图片/文件本身内时不处理（让浏览器默认行为或不做）
-  const isInAsset = img?.contains(container) || fileCard?.contains(container)
-  if (isInAsset) return
+  const isInAssetStructure = img?.contains(container) || 
+                             fileCard?.contains(container) || 
+                             (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) ||
+                             (isFold && !containerEl?.closest('.fold-content'))
+  if (isInAssetStructure) return
   
-  // 光标在 wrapper 内（含 wrapper 自身、trailing br、或 wrapper 末尾）即视为“在图片/文件后面”
   const isInsideWrapper = wrapper === container || wrapper.contains(container)
   const isAtEndOfWrapper = container === wrapper && range.startOffset >= wrapper.childNodes.length
   const isAtTrailingBr = trailingBr && (container === trailingBr || container.parentElement === trailingBr.parentElement || range.startContainer === trailingBr)
   const isAfterAsset = isInsideWrapper && (isAtTrailingBr || isAtEndOfWrapper || (container === wrapper && range.startOffset > 0))
   
-  // 或者光标在 wrapper 的父元素中，紧跟在 wrapper 后面
   const wrapperParent = wrapper.parentElement
   const containerParent = container.parentElement
   const isRightAfterWrapper = wrapperParent && containerParent && wrapperParent === containerParent && 
@@ -625,16 +646,12 @@ function handleEnterKey(e: KeyboardEvent) {
   
   if (isAfterAsset || isRightAfterWrapper) {
     e.preventDefault()
-    
-    // 创建新段落并插入到 wrapper 后面
     const newP = document.createElement('p')
     newP.className = 'editor-block'
     newP.setAttribute('data-id', genId())
     const br = document.createElement('br')
     newP.appendChild(br)
     
-    // 插入新段落
-    const wrapperParent = wrapper.parentElement
     if (wrapperParent) {
       if (wrapper.nextSibling) {
         wrapperParent.insertBefore(newP, wrapper.nextSibling)
@@ -643,15 +660,74 @@ function handleEnterKey(e: KeyboardEvent) {
       }
     }
     
-    // 移动光标到新段落
     const newRange = document.createRange()
     newRange.setStart(newP, 0)
     newRange.collapse(true)
     selection.removeAllRanges()
     selection.addRange(newRange)
-    
-    // 触发更新
     handleInput()
+  }
+}
+
+function handleKeyDown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement
+  const isInsideCode = target.classList.contains('code-editor') || target.closest('.code-editor')
+  
+  // 处理代码块内的全选 (Ctrl+A)
+  if (isInsideCode && e.ctrlKey && e.key === 'a') {
+    e.preventDefault()
+    const editor = target.classList.contains('code-editor') ? target : target.closest('.code-editor') as HTMLElement
+    const selection = window.getSelection()
+    if (selection && editor) {
+      const range = document.createRange()
+      range.selectNodeContents(editor)
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+    return
+  }
+
+  if (e.key === 'ArrowDown') {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || !editorRef.value) return
+    const range = selection.getRangeAt(0)
+    const container = range.commonAncestorContainer
+    
+    const foldContent = container instanceof HTMLElement ? container.closest('.fold-content') : container.parentElement?.closest('.fold-content')
+    if (foldContent) {
+      const lastRange = document.createRange()
+      lastRange.selectNodeContents(foldContent)
+      lastRange.collapse(false)
+      
+      const isAtEnd = range.compareBoundaryPoints(Range.END_TO_END, lastRange) >= 0
+      
+      if (isAtEnd) {
+        const foldBlock = foldContent.closest('.fold-block') as HTMLElement | null
+        if (foldBlock) {
+          e.preventDefault()
+          const nextSibling = foldBlock.nextSibling
+          if (nextSibling && nextSibling.nodeType === Node.ELEMENT_NODE && (nextSibling as HTMLElement).tagName.toLowerCase() === 'p') {
+            const newRange = document.createRange()
+            newRange.setStart(nextSibling, 0)
+            newRange.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(newRange)
+          } else {
+            const newP = document.createElement('p')
+            newP.className = 'editor-block'
+            newP.setAttribute('data-id', genId())
+            newP.innerHTML = '<br>'
+            foldBlock.parentNode?.insertBefore(newP, foldBlock.nextSibling)
+            const newRange = document.createRange()
+            newRange.setStart(newP, 0)
+            newRange.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(newRange)
+            handleInput()
+          }
+        }
+      }
+    }
   }
 }
 
@@ -685,18 +761,62 @@ async function updateFileIcons() {
   })
 }
 
+/** 渲染静态插入的 Lucide 图标 */
+function renderStaticIcons() {
+  const el = editorRef.value
+  if (!el) return
+  const placeholders = el.querySelectorAll('.copy-icon-placeholder')
+  placeholders.forEach(p => {
+    p.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+  })
+}
+
+function updateCodeHighlighting() {
+  const el = editorRef.value
+  if (!el) return
+  const codeEditors = el.querySelectorAll<HTMLElement>('.code-editor')
+  codeEditors.forEach((editor) => {
+    const wrapper = editor.closest('.code-block-wrapper') as HTMLElement | null
+    const lang = wrapper?.getAttribute('data-language') || 'text'
+    if (!editor.classList.contains('hljs')) {
+      editor.classList.add('hljs')
+    }
+    if (document.activeElement !== editor) {
+      const code = editor.innerText
+      if (code.trim()) {
+        try {
+          const highlighted = hljs.highlight(code, { language: lang }).value
+          editor.innerHTML = highlighted
+        } catch (e) {
+          console.error('Highlight error:', e)
+        }
+      } else {
+        editor.innerHTML = ''
+      }
+    }
+  })
+}
+
 onMounted(() => {
   if (!editorRef.value) return
   const nodes = Array.isArray(props.modelValue) && props.modelValue.length > 0 ? props.modelValue : defaultNodes()
   editorRef.value.innerHTML = nodesToHtml(nodes)
-  nextTick(updateFileIcons)
+  nextTick(() => {
+    updateFileIcons()
+    updateCodeHighlighting()
+    renderStaticIcons()
+  })
 })
 
 watch(() => props.modelValue, (newVal) => {
   if (!isInternalUpdate.value && editorRef.value) {
     const nodes = Array.isArray(newVal) && newVal.length > 0 ? newVal : defaultNodes()
     editorRef.value.innerHTML = nodesToHtml(nodes)
-    nextTick(updateFileIcons)
+    nextTick(() => {
+      updateFileIcons()
+      updateCodeHighlighting()
+      renderStaticIcons()
+    })
   }
 }, { deep: true })
 
@@ -721,7 +841,6 @@ const restoreSelection = () => {
   sel.addRange(savedRange)
 }
 
-// 快捷命令执行（会先恢复工具栏点击前保存的选区）
 const execCommand = (command: string, value?: string) => {
   restoreSelection()
   if (command === 'formatBlock' && value) {
@@ -738,17 +857,29 @@ const execCommand = (command: string, value?: string) => {
   handleInput()
 }
 
+function findNodeById(nodes: EditorNode[], id: string, type: 'image' | 'file'): EditorNode | null {
+  for (const n of nodes) {
+    if (n.type === type && (n.id === id || (n as { id?: string }).id === id)) {
+      return n
+    }
+    if ('children' in n && Array.isArray(n.children)) {
+      const found = findNodeById(n.children, id, type)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 const selectedImageNode = computed(() => {
   if (!selectedImageId.value || !Array.isArray(props.modelValue)) return null
-  return props.modelValue.find((n): n is EditorNode & { type: 'image' } => n.type === 'image' && (n as { id?: string }).id === selectedImageId.value) ?? null
+  return findNodeById(props.modelValue, selectedImageId.value, 'image') as (EditorNode & { type: 'image' }) | null
 })
 
 const selectedFileNode = computed(() => {
   if (!selectedFileId.value || !Array.isArray(props.modelValue)) return null
-  return props.modelValue.find((n): n is EditorNode & { type: 'file' } => n.type === 'file' && (n as { id?: string }).id === selectedFileId.value) ?? null
+  return findNodeById(props.modelValue, selectedFileId.value, 'file') as (EditorNode & { type: 'file' }) | null
 })
 
-/** 在节点树中按 id 查找 taskItem */
 function findTaskItemById(nodes: EditorNode[], id: string): (EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }) | null {
   for (const n of nodes) {
     if (n.type === 'taskItem' && (n.id === id || (n as { id?: string }).id === id))
@@ -761,7 +892,6 @@ function findTaskItemById(nodes: EditorNode[], id: string): (EditorNode & { type
   return null
 }
 
-/** 在节点树中把指定 id 的 taskItem 的 checked 设为给定值，返回新树 */
 function updateTaskItemCheckedInTree(nodes: EditorNode[], taskItemId: string, checked: boolean): EditorNode[] {
   return nodes.map((n) => {
     if (n.type === 'taskItem' && ((n as { id?: string }).id === taskItemId)) {
@@ -776,6 +906,96 @@ function updateTaskItemCheckedInTree(nodes: EditorNode[], taskItemId: string, ch
 
 function onEditorClick(e: MouseEvent) {
   const target = e.target as HTMLElement
+  const foldCopy = (target.classList.contains('fold-copy-btn') ? target : target.closest('.fold-copy-btn')) as HTMLElement | null
+  if (foldCopy) {
+    e.preventDefault()
+    const block = foldCopy.closest('.code-block-wrapper') as HTMLElement | null
+    const editor = block?.querySelector('.code-editor') as HTMLElement | null
+    if (editor) {
+      const code = editor.innerText
+      navigator.clipboard.writeText(code).then(() => {
+        ElMessage.success(t('editor.copySuccess'))
+      })
+    }
+    return
+  }
+  const foldInsert = (target.classList.contains('fold-insert-btn') ? target : target.closest('.fold-insert-btn')) as HTMLElement | null
+  if (foldInsert) {
+    e.preventDefault()
+    const block = foldInsert.closest('.fold-block, .code-block-wrapper') as HTMLElement | null
+    if (!block) return
+    const wrapperParent = block.parentElement
+    if (!wrapperParent) return
+    const newP = document.createElement('p')
+    newP.className = 'editor-block'
+    newP.setAttribute('data-id', genId())
+    const br = document.createElement('br')
+    newP.appendChild(br)
+    if (block.nextSibling) {
+      wrapperParent.insertBefore(newP, block.nextSibling)
+    } else {
+      wrapperParent.appendChild(newP)
+    }
+    const sel = window.getSelection()
+    if (sel) {
+      const newRange = document.createRange()
+      newRange.setStart(newP, 0)
+      newRange.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(newRange)
+    }
+    handleInput()
+    return
+  }
+  const foldToggle = target.classList.contains('fold-toggle-btn') ? target : target.closest('.fold-toggle-btn')
+  if (foldToggle) {
+    e.preventDefault()
+    const foldBlock = foldToggle.closest('.fold-block') as HTMLElement | null
+    if (!foldBlock) return
+    const id = foldBlock.getAttribute('data-id')
+    if (!id || !Array.isArray(props.modelValue)) return
+    
+    function toggleFoldInTree(nodes: EditorNode[], targetId: string): EditorNode[] {
+      return nodes.map(n => {
+        if (n.type === 'fold' && n.id === targetId) {
+          return { ...n, folded: !n.folded }
+        }
+        if ('children' in n && Array.isArray(n.children)) {
+          return { ...n, children: toggleFoldInTree(n.children, targetId) }
+        }
+        return n
+      })
+    }
+    
+    const updated = toggleFoldInTree(props.modelValue, id)
+    emit('update:modelValue', updated)
+    isInternalUpdate.value = true
+    if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(updated)
+    nextTick(() => {
+      updateFileIcons()
+      updateCodeHighlighting()
+    })
+    setTimeout(() => { isInternalUpdate.value = false }, 0)
+    return
+  }
+  const codeCard = target.closest('.code-card') as HTMLElement | null
+  if (codeCard) {
+    const editor = codeCard.querySelector('.code-editor') as HTMLElement | null
+    if (editor && target !== editor) {
+      editor.focus()
+    }
+    selectedImageId.value = null
+    selectedFileId.value = null
+    return
+  }
+  const foldBlockStructure = target.closest('.fold-block') as HTMLElement | null
+  if (foldBlockStructure && !target.closest('.fold-content')) {
+    const content = foldBlockStructure.querySelector('.fold-content') as HTMLElement | null
+    if (content) {
+      content.focus()
+    }
+    return
+  }
   const taskCheckbox = target.classList.contains('task-item-checkbox') ? target : target.closest('.task-item-checkbox')
   if (taskCheckbox) {
     e.preventDefault()
@@ -790,50 +1010,69 @@ function onEditorClick(e: MouseEvent) {
     emit('update:modelValue', updated)
     isInternalUpdate.value = true
     if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(updated)
-    nextTick(updateFileIcons)
+    nextTick(() => {
+      updateFileIcons()
+      updateCodeHighlighting()
+    })
     setTimeout(() => { isInternalUpdate.value = false }, 0)
     return
   }
   if (target.closest('.image-toolbar-root') || target.closest('.file-toolbar-root')) return
-  if (target.classList.contains('image-block') || target.closest('.image-block-wrapper')) {
-    const wrapper = target.closest('.image-block-wrapper') as HTMLElement | null
-    const img = (wrapper?.querySelector('img.image-block') ?? target) as HTMLElement
-    const id = img?.getAttribute('data-id') ?? null
-    if (id) {
-      selectedImageId.value = id
-      const rect = img.getBoundingClientRect()
-      let top: number
-      if (rect.top - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
-        top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
-      } else {
-        top = rect.top + window.scrollY - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+  
+  // 处理图片点击（包括折叠块内的图片）
+  const imgElement = target.tagName === 'IMG' && target.classList.contains('image-block') 
+    ? target as HTMLElement 
+    : target.closest('img.image-block') as HTMLElement | null
+  const imageWrapper = target.closest('.image-block-wrapper') as HTMLElement | null
+  
+  if (imgElement || imageWrapper) {
+    const img = imgElement ?? imageWrapper?.querySelector('img.image-block') as HTMLElement | null
+    if (img) {
+      const id = img.getAttribute('data-id') ?? null
+      if (id) {
+        selectedImageId.value = id
+        const rect = img.getBoundingClientRect()
+        let top: number
+        if (rect.top - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
+          top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
+        } else {
+          top = rect.top + window.scrollY - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+        }
+        let left = rect.left + rect.width / 2 - IMAGE_TOOLBAR_APPROX_WIDTH / 2
+        left += window.scrollX
+        left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - IMAGE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+        selectedImageRect.value = { top, left }
       }
-      let left = rect.left + rect.width / 2 - IMAGE_TOOLBAR_APPROX_WIDTH / 2
-      left += window.scrollX
-      left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - IMAGE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
-      selectedImageRect.value = { top, left }
     }
     selectedFileId.value = null
     return
   }
-  if (target.classList.contains('file-block') || target.closest('.file-block-wrapper') || target.closest('.file-card')) {
-    const wrapper = target.closest('.file-block-wrapper') as HTMLElement | null
-    const fileBlock = wrapper?.querySelector('.file-block') as HTMLElement | null
-    const id = wrapper?.getAttribute('data-id') ?? fileBlock?.getAttribute('data-id') ?? null
-    if (id) {
-      selectedFileId.value = id
-      const rect = (fileBlock ?? wrapper)?.getBoundingClientRect()
-      if (rect) {
-        let top: number
-        if (rect.top - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
-          top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
-        } else {
-          top = rect.top + window.scrollY - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+  
+  // 处理文件点击（包括折叠块内的文件）
+  const fileWrapper = target.closest('.file-block-wrapper') as HTMLElement | null
+  const fileCard = target.closest('.file-card') as HTMLElement | null
+  const fileBlock = target.closest('.file-block') as HTMLElement | null
+  
+  if (fileWrapper || fileCard || fileBlock) {
+    const wrapper = fileWrapper ?? (fileCard || fileBlock)?.closest('.file-block-wrapper') as HTMLElement | null
+    if (wrapper) {
+      const id = wrapper.getAttribute('data-id') ?? null
+      if (id) {
+        selectedFileId.value = id
+        const block = wrapper.querySelector('.file-block') as HTMLElement | null
+        const rect = (block ?? wrapper)?.getBoundingClientRect()
+        if (rect) {
+          let top: number
+          if (rect.top - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
+            top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
+          } else {
+            top = rect.top + window.scrollY - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+          }
+          let left = rect.left + rect.width / 2 - FILE_TOOLBAR_APPROX_WIDTH / 2
+          left += window.scrollX
+          left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - FILE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+          selectedFileRect.value = { top, left }
         }
-        let left = rect.left + rect.width / 2 - FILE_TOOLBAR_APPROX_WIDTH / 2
-        left += window.scrollX
-        left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - FILE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
-        selectedFileRect.value = { top, left }
       }
     }
     selectedImageId.value = null
@@ -846,22 +1085,38 @@ function onEditorClick(e: MouseEvent) {
 function onEditorContextMenu(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (target.closest('.image-toolbar-root')) return
-  if (target.classList.contains('image-block') || target.closest('.image-block-wrapper')) {
-    const wrapper = target.closest('.image-block-wrapper') as HTMLElement | null
-    const el = (wrapper ?? target) as HTMLElement
-    const assetPath = el.getAttribute('data-asset-path') ?? ''
-    const id = el.getAttribute('data-id') ?? ''
-    if (assetPath) {
-      e.preventDefault()
-      emit('contextmenu', { type: 'image', assetPath, id, clientX: e.clientX, clientY: e.clientY })
+  
+  // 处理图片右键（包括折叠块内的图片）
+  const imgElement = target.tagName === 'IMG' && target.classList.contains('image-block') 
+    ? target as HTMLElement 
+    : target.closest('img.image-block') as HTMLElement | null
+  const imageWrapper = target.closest('.image-block-wrapper') as HTMLElement | null
+  
+  if (imgElement || imageWrapper) {
+    const img = imgElement ?? imageWrapper?.querySelector('img.image-block') as HTMLElement | null
+    const wrapper = imageWrapper ?? (imgElement?.closest('.image-block-wrapper') as HTMLElement | null)
+    if (img || wrapper) {
+      const el = img ?? wrapper!
+      const assetPath = el.getAttribute('data-asset-path') ?? ''
+      const id = el.getAttribute('data-id') ?? ''
+      if (assetPath) {
+        e.preventDefault()
+        emit('contextmenu', { type: 'image', assetPath, id, clientX: e.clientX, clientY: e.clientY })
+      }
     }
     return
   }
-  if (target.classList.contains('file-block') || target.closest('.file-block')) {
-    const el = target.closest('.file-block') as HTMLElement
-    if (el) {
-      const assetPath = el.getAttribute('data-asset-path') ?? ''
-      const id = el.getAttribute('data-id') ?? ''
+  
+  // 处理文件右键（包括折叠块内的文件）
+  const fileWrapper = target.closest('.file-block-wrapper') as HTMLElement | null
+  const fileCard = target.closest('.file-card') as HTMLElement | null
+  const fileBlock = target.closest('.file-block') as HTMLElement | null
+  
+  if (fileWrapper || fileCard || fileBlock) {
+    const wrapper = fileWrapper ?? (fileCard || fileBlock)?.closest('.file-block-wrapper') as HTMLElement | null
+    if (wrapper) {
+      const assetPath = wrapper.getAttribute('data-asset-path') ?? ''
+      const id = wrapper.getAttribute('data-id') ?? ''
       if (assetPath) {
         e.preventDefault()
         emit('contextmenu', { type: 'file', assetPath, id, clientX: e.clientX, clientY: e.clientY })
@@ -870,62 +1125,94 @@ function onEditorContextMenu(e: MouseEvent) {
   }
 }
 
+function updateNodeInTree(nodes: EditorNode[], id: string, type: 'image' | 'file', updates: { widthPercent?: number; align?: 'left' | 'center' | 'right' }): EditorNode[] {
+  return nodes.map(node => {
+    if (node.type === type && (node.id === id || (node as { id?: string }).id === id)) {
+      return { ...node, ...updates } as EditorNode
+    }
+    if ('children' in node && Array.isArray(node.children)) {
+      return { ...node, children: updateNodeInTree(node.children, id, type, updates) } as EditorNode
+    }
+    return node
+  })
+}
+
 function updateImageNode(updates: { widthPercent?: number; align?: 'left' | 'center' | 'right' }) {
   if (!selectedImageId.value || !Array.isArray(props.modelValue)) return
-  const next = props.modelValue.map(node => {
-    if (node.type !== 'image' || node.id !== selectedImageId.value) return node
-    return { ...node, ...updates }
-  })
+  const next = updateNodeInTree(props.modelValue, selectedImageId.value, 'image', updates)
   emit('update:modelValue', next)
-  // 直接同步 DOM，否则 watch 可能因 v-model 更新时机导致不重绘
   isInternalUpdate.value = true
   if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(next)
-  nextTick(updateFileIcons)
+  nextTick(() => {
+    updateFileIcons()
+    updateCodeHighlighting()
+  })
   setTimeout(() => { isInternalUpdate.value = false }, 0)
 }
 
 function updateFileNode(updates: { align?: 'left' | 'center' | 'right' }) {
   if (!selectedFileId.value || !Array.isArray(props.modelValue)) return
-  const next = props.modelValue.map(node => {
-    if (node.type !== 'file' || node.id !== selectedFileId.value) return node
-    return { ...node, ...updates }
-  })
+  const next = updateNodeInTree(props.modelValue, selectedFileId.value, 'file', updates)
   emit('update:modelValue', next)
   isInternalUpdate.value = true
   if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(next)
-  nextTick(updateFileIcons)
+  nextTick(() => {
+    updateFileIcons()
+    updateCodeHighlighting()
+  })
   setTimeout(() => { isInternalUpdate.value = false }, 0)
 }
 
-/** 处理双击：图片双击打开 */
 function onEditorDblClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.classList.contains('image-block') || target.closest('.image-block-wrapper')) {
-    const wrapper = target.closest('.image-block-wrapper') as HTMLElement | null
-    const img = (wrapper?.querySelector('img.image-block') ?? target) as HTMLImageElement
-    const assetPath = img?.getAttribute('data-asset-path') ?? ''
-    const id = img?.getAttribute('data-id') ?? ''
-    if (assetPath && id) {
-      emit('open-asset', { type: 'image', assetPath, id })
+  const imgElement = target.tagName === 'IMG' && target.classList.contains('image-block') 
+    ? target as HTMLElement 
+    : target.closest('img.image-block') as HTMLElement | null
+  const imageWrapper = target.closest('.image-block-wrapper') as HTMLElement | null
+  
+  if (imgElement || imageWrapper) {
+    const img = imgElement ?? imageWrapper?.querySelector('img.image-block') as HTMLImageElement | null
+    if (img) {
+      const assetPath = img.getAttribute('data-asset-path') ?? ''
+      const id = img.getAttribute('data-id') ?? ''
+      if (assetPath && id) {
+        emit('open-asset', { type: 'image', assetPath, id })
+      }
     }
   }
 }
 
 function computeCursorBlockIndex(): number {
   const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0 || !editorRef.value) return -1
-  let node: Node | null = sel.anchorNode
+  const editor = editorRef.value
+  if (!sel || sel.rangeCount === 0 || !editor) return -1
+  
+  const anchorNode = sel.anchorNode
+  if (!anchorNode) return -1
+
+  // 寻找所在的 block-container
+  let container: HTMLElement | null = null
+  let curr: Node | null = anchorNode
+  while (curr && curr !== editor) {
+    if (curr instanceof HTMLElement && curr.getAttribute('contenteditable') === 'true') {
+      container = curr
+      break
+    }
+    curr = curr.parentNode
+  }
+  if (!container) container = editor
+
+  let node: Node | null = anchorNode
+  while (node && node.parentNode !== container) node = node.parentNode
   if (!node) return -1
-  while (node && node.parentNode !== editorRef.value) node = node.parentNode
-  if (!node) return -1
-  const children = editorRef.value.childNodes
+  
+  const children = container.childNodes
   for (let i = 0; i < children.length; i++) {
     if (children[i] === node) return i
   }
   return -1
 }
 
-/** 获取当前光标所在的根级块索引；若已失焦则返回上次记录的索引。 */
 function getCursorBlockIndex(): number {
   const current = computeCursorBlockIndex()
   if (current >= 0) {
@@ -951,10 +1238,10 @@ onUnmounted(() => {
   document.removeEventListener('selectionchange', selectionChangeHandler)
 })
 
-/** 在当前光标所在块之后插入一个任务列表（与“列表”按钮的插入位置逻辑一致） */
 function insertTaskListAtSelection() {
   restoreSelection()
-  const idx = getCursorBlockIndex()
+  const info = getInsertionContainer()
+  if (!info.container) return
   const taskNode: EditorNode = {
     type: 'taskList',
     id: genId(),
@@ -964,18 +1251,125 @@ function insertTaskListAtSelection() {
   const wrap = document.createElement('div')
   wrap.innerHTML = html
   const ul = wrap.firstElementChild
-  if (!ul || !editorRef.value) return
-  const editor = editorRef.value
-  if (idx >= 0 && idx < editor.childNodes.length) {
-    const next = editor.childNodes[idx + 1] || null
-    editor.insertBefore(ul, next)
+  if (!ul) return
+  
+  if (info.index >= 0 && info.index < info.container.childNodes.length) {
+    const next = info.container.childNodes[info.index + 1] || null
+    info.container.insertBefore(ul, next)
   } else {
-    editor.appendChild(ul)
+    info.container.appendChild(ul)
   }
   handleInput()
 }
 
-defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCursorBlockIndex, insertTaskListAtSelection, insertPlainText })
+function getFoldDepth(node: Node | null): number {
+  let depth = 0
+  let curr = node
+  while (curr && curr !== editorRef.value) {
+    if (curr instanceof HTMLElement && curr.classList.contains('fold-block')) {
+      depth++
+    }
+    curr = curr.parentNode
+  }
+  return depth
+}
+
+function insertCodeBlock() {
+  restoreSelection()
+  const info = getInsertionContainer()
+  if (!info.container) return
+  const codeNode: EditorNode = {
+    type: 'code',
+    id: genId(),
+    content: '',
+    language: 'javascript'
+  }
+  const html = nodeToHtml(codeNode)
+  const wrap = document.createElement('div')
+  wrap.innerHTML = html
+  const el = wrap.firstElementChild
+  if (!el) return
+  
+  if (info.index >= 0 && info.index < info.container.childNodes.length) {
+    const next = info.container.childNodes[info.index + 1] || null
+    info.container.insertBefore(el, next)
+  } else {
+    info.container.appendChild(el)
+  }
+  handleInput()
+}
+
+function insertFoldBlock() {
+  restoreSelection()
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !editorRef.value) return
+  
+  const depth = getFoldDepth(sel.anchorNode)
+  if (depth >= 3) {
+    return 
+  }
+
+  const info = getInsertionContainer()
+  if (!info.container) return
+  const foldNode: EditorNode = {
+    type: 'fold',
+    id: genId(),
+    folded: false,
+    children: [{ type: 'p', id: genId(), children: [] }]
+  }
+  const html = nodeToHtml(foldNode)
+  const wrap = document.createElement('div')
+  wrap.innerHTML = html
+  const el = wrap.firstElementChild
+  if (!el) return
+  
+  if (info.index >= 0 && info.index < info.container.childNodes.length) {
+    const next = info.container.childNodes[info.index + 1] || null
+    info.container.insertBefore(el, next)
+  } else {
+    info.container.appendChild(el)
+  }
+  handleInput()
+}
+
+function insertNodesAtSelection(newNodes: EditorNode | EditorNode[]) {
+  restoreSelection()
+  const info = getInsertionContainer()
+  if (!info.container) return
+
+  const nodesArray = Array.isArray(newNodes) ? newNodes : [newNodes]
+  const frag = document.createDocumentFragment()
+  for (const node of nodesArray) {
+    const html = nodeToHtml(node)
+    const wrap = document.createElement('div')
+    wrap.innerHTML = html
+    const el = wrap.firstElementChild
+    if (el) frag.appendChild(el)
+  }
+
+  if (!frag.childNodes.length) return
+
+  if (info.index >= 0 && info.index < info.container.childNodes.length) {
+    const next = info.container.childNodes[info.index + 1] || null
+    info.container.insertBefore(frag, next)
+  } else {
+    info.container.appendChild(frag)
+  }
+  handleInput()
+}
+
+defineExpose({
+  execCommand,
+  handleInput,
+  saveSelection,
+  restoreSelection,
+  getCursorBlockIndex,
+  insertTaskListAtSelection,
+  insertPlainText,
+  insertCodeBlock,
+  insertFoldBlock,
+  insertNodesAtSelection
+})
 </script>
 
 <template>
@@ -991,6 +1385,8 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCur
       @click="onEditorClick"
       @dblclick="onEditorDblClick"
       @contextmenu="onEditorContextMenu"
+      @keydown="handleKeyDown"
+      @focusout="updateCodeHighlighting"
     ></div>
     <Teleport to="body">
       <div
@@ -1170,6 +1566,149 @@ defineExpose({ execCommand, handleInput, saveSelection, restoreSelection, getCur
   font-size: 12px;
   color: var(--file-size-color);
   margin-left: 6px;
+}
+
+/* Code Block Styles */
+:deep(.code-block-wrapper) {
+  position: relative;
+}
+
+:deep(.code-card) {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--file-card-border);
+  border-radius: 8px;
+  background: var(--file-card-bg);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+:deep(.code-header) {
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid var(--file-card-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--file-size-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+:deep(.code-header-btns) {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dark :deep(.code-header) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:deep(.code-editor) {
+  padding: 16px;
+  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  word-break: normal;
+  outline: none;
+  color: var(--app-text-color);
+  min-height: 1em;
+}
+
+/* Fold Block Styles */
+:deep(.fold-block) {
+  margin: 20px 0;
+  border: none;
+  padding: 0;
+}
+
+:deep(.fold-line-top), :deep(.fold-line-bottom) {
+  height: 1px;
+  background: var(--file-card-border);
+  margin: 4px 0;
+  width: 100%;
+  opacity: 0.8;
+}
+
+:deep(.fold-header) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  color: var(--file-size-color);
+  font-size: 13px;
+  font-weight: 500;
+  user-select: none;
+}
+
+:deep(.fold-toggle-btn), :deep(.fold-insert-btn), :deep(.fold-copy-btn) {
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--app-text-color);
+  font-size: 10px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+:deep(.fold-toggle-btn:hover), :deep(.fold-insert-btn:hover), :deep(.fold-copy-btn:hover) {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.dark :deep(.fold-toggle-btn), .dark :deep(.fold-insert-btn), .dark :deep(.fold-copy-btn) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark :deep(.fold-toggle-btn:hover), .dark :deep(.fold-insert-btn:hover), .dark :deep(.fold-copy-btn:hover) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+:deep(.fold-insert-btn) {
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+:deep(.fold-copy-btn) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.fold-copy-btn .copy-icon-placeholder) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+:deep(.fold-copy-btn .copy-icon-placeholder svg) {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+
+:deep(.fold-content) {
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid var(--file-card-border);
+  margin-left: 10px;
+  outline: none;
+}
+
+/* Nesting support */
+:deep(.fold-content .fold-block) {
+  margin: 8px 0;
 }
 
 .image-toolbar {

@@ -54,6 +54,12 @@
         "toolbarInsertImage": "插入图片",
         "toolbarInsertFile": "插入文件",
         "toolbarInsertTask": "插入任务",
+        "toolbarInsertCode": "插入代码块",
+        "toolbarInsertFold": "插入折叠块",
+        "codeCopy": "复制代码",
+        "copySuccess": "已复制到剪贴板",
+        "foldTitle": "折叠块",
+        "foldInsertAfter": "在后方插入新行",
         "bubbleBold": "加粗",
         "bubbleItalic": "斜体",
         "bubbleColor": "文字颜色"

@@ -137,38 +137,58 @@ onUnmounted(() => {
 async function backfillFileSizes() {
   if (!todoItem) return
   const base = await join(settingsStore.config.data_path, todoItem.folder_name)
-  const list: EditorNode[] = []
-  for (const node of blocks.value) {
+  
+  async function processNode(node: EditorNode): Promise<EditorNode> {
+    // 处理文件节点
     if (node.type === 'file' && node.assetPath) {
       try {
         const fullPath = await join(base, node.assetPath)
         const info = await stat(fullPath)
-        list.push({ ...node, fileSize: info.size })
+        return { ...node, fileSize: info.size }
       } catch {
-        list.push(node)
+        return node
       }
-    } else {
-      list.push(node)
     }
+    
+    // 递归处理包含子节点的节点（折叠块、任务列表等）
+    if ('children' in node && Array.isArray(node.children)) {
+      const processedChildren = await Promise.all(node.children.map(processNode))
+      return { ...node, children: processedChildren }
+    }
+    
+    return node
   }
-  blocks.value = list
+  
+  blocks.value = await Promise.all(blocks.value.map(processNode))
 }
 
 function collectUsedAssetNames(nodes: EditorNode[]): Set<string> {
   const names = new Set<string>()
-  for (const node of nodes) {
-    if (node.type !== 'image' && node.type !== 'file') continue
-    if (node.assetPath) {
-      const name = node.assetPath.split(/[/\\]/).pop()
-      if (name) names.add(name)
-    }
-    if (node.url) {
-      try {
-        const segs = decodeURIComponent(node.url).split(/[/\\]/)
-        if (segs.length) names.add(segs[segs.length - 1])
-      } catch (_) {}
+  
+  function traverse(nodes: EditorNode[]) {
+    for (const node of nodes) {
+      // 收集图片和文件的资源名称
+      if (node.type === 'image' || node.type === 'file') {
+        if (node.assetPath) {
+          const name = node.assetPath.split(/[/\\]/).pop()
+          if (name) names.add(name)
+        }
+        if (node.url) {
+          try {
+            const segs = decodeURIComponent(node.url).split(/[/\\]/)
+            if (segs.length) names.add(segs[segs.length - 1])
+          } catch (_) {}
+        }
+      }
+      
+      // 递归遍历子节点（包括折叠块、任务列表、列表项等）
+      if ('children' in node && Array.isArray(node.children)) {
+        traverse(node.children)
+      }
     }
   }
+  
+  traverse(nodes)
   return names
 }
 
@@ -206,11 +226,27 @@ const handleImageUpload = async () => {
     const assetPath = `assets/${targetFileName}`
     const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
     const targetPath = await join(assetsDir, targetFileName)
+    
+    // 检查文件是否已存在，如果不存在则写入
+    let fileExists = false
     try {
       await stat(targetPath)
+      fileExists = true
     } catch {
-      await writeFile(targetPath, fileData)
+      // 文件不存在，需要写入
+      fileExists = false
     }
+    
+    if (!fileExists) {
+      await writeFile(targetPath, fileData)
+      // 验证文件是否真的被写入了
+      try {
+        await stat(targetPath)
+      } catch (verifyErr) {
+        throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
+      }
+    }
+    
     const newBlock: EditorNode = {
       type: 'image',
       id: crypto.randomUUID(),
@@ -219,16 +255,11 @@ const handleImageUpload = async () => {
       widthPercent: 100,
       align: 'left'
     }
-    const idx = insertAtIndexRef.value
-    if (idx >= 0) {
-      blocks.value = [...blocks.value.slice(0, idx + 1), newBlock, ...blocks.value.slice(idx + 1)]
-      insertAtIndexRef.value = -1
-    } else {
-      blocks.value.push(newBlock)
-    }
+    editorRef.value?.insertNodesAtSelection?.(newBlock)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     ElMessage.error(`上传失败: ${msg}`)
+    console.error('图片上传错误:', e)
   }
 }
 
@@ -304,11 +335,27 @@ const handleFileUpload = async () => {
     const assetPath = `assets/${targetFileName}`
     const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
     const targetPath = await join(assetsDir, targetFileName)
+    
+    // 检查文件是否已存在，如果不存在则写入
+    let fileExists = false
     try {
       await stat(targetPath)
+      fileExists = true
     } catch {
-      await writeFile(targetPath, fileData)
+      // 文件不存在，需要写入
+      fileExists = false
     }
+    
+    if (!fileExists) {
+      await writeFile(targetPath, fileData)
+      // 验证文件是否真的被写入了
+      try {
+        await stat(targetPath)
+      } catch (verifyErr) {
+        throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
+      }
+    }
+    
     const newBlock: EditorNode = {
       type: 'file',
       id: crypto.randomUUID(),
@@ -316,21 +363,24 @@ const handleFileUpload = async () => {
       fileName: displayName,
       assetPath
     }
-    const idx = insertAtIndexRef.value
-    if (idx >= 0) {
-      blocks.value = [...blocks.value.slice(0, idx + 1), newBlock, ...blocks.value.slice(idx + 1)]
-      insertAtIndexRef.value = -1
-    } else {
-      blocks.value.push(newBlock)
-    }
+    editorRef.value?.insertNodesAtSelection?.(newBlock)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     ElMessage.error(`上传失败: ${msg}`)
+    console.error('文件上传错误:', e)
   }
 }
 
 function handleInsertTask() {
   editorRef.value?.insertTaskListAtSelection?.()
+}
+
+function handleInsertCode() {
+  editorRef.value?.insertCodeBlock?.()
+}
+
+function handleInsertFold() {
+  editorRef.value?.insertFoldBlock?.()
 }
 
 async function getAssetFullPath(assetPath: string): Promise<string> {
@@ -420,11 +470,27 @@ const handleDrop = async (e: DragEvent) => {
       const targetFileName = `${hash}.${ext}`
       const assetPath = `assets/${targetFileName}`
       const targetPath = await join(assetsDir, targetFileName)
+      
+      // 检查文件是否已存在，如果不存在则写入
+      let fileExists = false
       try {
         await stat(targetPath)
+        fileExists = true
       } catch {
-        await writeFile(targetPath, new Uint8Array(arrayBuffer))
+        fileExists = false
       }
+      
+      if (!fileExists) {
+        await writeFile(targetPath, new Uint8Array(arrayBuffer))
+        // 验证文件是否真的被写入了
+        try {
+          await stat(targetPath)
+        } catch (verifyErr) {
+          console.error(`文件写入失败: ${targetPath}`, verifyErr)
+          throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
+        }
+      }
+      
       const node: EditorNode =
         isImage
           ? {
@@ -442,11 +508,12 @@ const handleDrop = async (e: DragEvent) => {
               fileName: file.name || 'file',
               assetPath
             }
-      blocks.value.push(node)
+      editorRef.value?.insertNodesAtSelection?.(node)
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     ElMessage.error(`上传失败: ${msg}`)
+    console.error('拖拽上传错误:', err)
   }
 }
 
@@ -475,10 +542,25 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
         const targetFileName = `${hash}.${ext}`
         const assetPath = `assets/${targetFileName}`
         const targetPath = await join(assetsDir, targetFileName)
+        
+        // 检查文件是否已存在，如果不存在则写入
+        let fileExists = false
         try {
           await stat(targetPath)
+          fileExists = true
         } catch {
+          fileExists = false
+        }
+        
+        if (!fileExists) {
           await writeFile(targetPath, new Uint8Array(asArrayBuffer(arrayBuffer)))
+          // 验证文件是否真的被写入了
+          try {
+            await stat(targetPath)
+          } catch (verifyErr) {
+            console.error(`文件写入失败: ${targetPath}`, verifyErr)
+            throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
+          }
         }
         if (isImage) {
           newNodes.push({
@@ -515,16 +597,7 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
 
     if (!newNodes.length) return
 
-    const idx = editorRef.value?.getCursorBlockIndex?.() ?? blocks.value.length - 1
-    if (idx >= 0 && idx < blocks.value.length) {
-      blocks.value = [
-        ...blocks.value.slice(0, idx + 1),
-        ...newNodes,
-        ...blocks.value.slice(idx + 1)
-      ]
-    } else {
-      blocks.value = [...blocks.value, ...newNodes]
-    }
+    editorRef.value?.insertNodesAtSelection?.(newNodes)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     ElMessage.error(`上传失败: ${msg}`)
@@ -555,6 +628,8 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
         @insert-image="handleImageUpload"
         @insert-file="handleFileUpload"
         @insert-task="handleInsertTask"
+        @insert-code="handleInsertCode"
+        @insert-fold="handleInsertFold"
       />
       <el-scrollbar class="editor-scroll">
         <AdvancedEditor
