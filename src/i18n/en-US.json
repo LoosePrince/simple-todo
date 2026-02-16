@@ -12,6 +12,10 @@
         "placeholder": "Add a new todo...",
         "detailTitle": "Todo Detail"
     },
+    "detail": {
+        "saved": "Saved",
+        "saveShortcut": "Save (Ctrl+S)"
+    },
     "settings": {
         "title": "Settings",
         "language": "Language",
@@ -36,6 +40,8 @@
         "toolbarAlignLeft": "Align left",
         "toolbarAlignCenter": "Center",
         "toolbarAlignRight": "Align right",
+        "toolbarUndo": "Undo",
+        "toolbarRedo": "Redo",
         "toolbarInsertImage": "Insert image",
         "toolbarInsertFile": "Insert file",
         "bubbleBold": "Bold",

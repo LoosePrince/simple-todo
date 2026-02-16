@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bold, Italic, List, Image as ImageIcon, FilePlus, AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next'
+import { Bold, Italic, List, Image as ImageIcon, FilePlus, AlignLeft, AlignCenter, AlignRight, Undo2, Redo2 } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const emit = defineEmits(['command', 'insert-image', 'insert-file', 'mousedown'])
@@ -65,7 +65,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="editor-toolbar" @mousedown="emit('mousedown')">
     <div class="toolbar-group block-style-btns">
-      <el-tooltip v-for="b in blockStyles" :key="b.value" :content="t('editor.' + b.key)" placement="top">
+      <el-tooltip v-for="b in blockStyles" :key="b.value" :content="t('editor.' + b.key)" placement="top" popper-class="editor-tooltip-nohit">
         <button
           type="button"
           class="toolbar-style-btn"
@@ -78,7 +78,7 @@ onBeforeUnmount(() => {
     <div class="toolbar-divider"></div>
 
     <div class="toolbar-group">
-      <el-tooltip v-for="c in commands" :key="c.cmd" :content="t('editor.' + c.key)" placement="top">
+      <el-tooltip v-for="c in commands" :key="c.cmd" :content="t('editor.' + c.key)" placement="top" popper-class="editor-tooltip-nohit">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('command', c.cmd)">
           <component :is="c.icon" :size="16" />
         </el-button>
@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
     <div class="toolbar-divider"></div>
 
     <div class="toolbar-group">
-      <el-tooltip v-for="a in alignCommands" :key="a.cmd" :content="t('editor.' + a.key)" placement="top">
+      <el-tooltip v-for="a in alignCommands" :key="a.cmd" :content="t('editor.' + a.key)" placement="top" popper-class="editor-tooltip-nohit">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('command', a.cmd)">
           <component :is="a.icon" :size="16" />
         </el-button>
@@ -98,13 +98,28 @@ onBeforeUnmount(() => {
     <div class="toolbar-divider"></div>
 
     <div class="toolbar-group">
-      <el-tooltip :content="t('editor.toolbarInsertImage')" placement="top">
-        <el-button circle @click="emit('insert-image')">
+      <el-tooltip :content="t('editor.toolbarUndo')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('command', 'undo')">
+          <Undo2 :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarRedo')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('command', 'redo')">
+          <Redo2 :size="16" />
+        </el-button>
+      </el-tooltip>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <div class="toolbar-group">
+      <el-tooltip :content="t('editor.toolbarInsertImage')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-image')">
           <ImageIcon :size="16" />
         </el-button>
       </el-tooltip>
-      <el-tooltip :content="t('editor.toolbarInsertFile')" placement="top">
-        <el-button circle @click="emit('insert-file')">
+      <el-tooltip :content="t('editor.toolbarInsertFile')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-file')">
           <FilePlus :size="16" />
         </el-button>
       </el-tooltip>
@@ -124,7 +139,7 @@ onBeforeUnmount(() => {
         <button type="button" class="bubble-btn" :title="t('editor.bubbleItalic')" @click="emit('command', 'italic')">
           <Italic :size="14" />
         </button>
-        <el-tooltip :content="t('editor.bubbleColor')" placement="top">
+        <el-tooltip :content="t('editor.bubbleColor')" placement="top" popper-class="editor-tooltip-nohit">
           <el-color-picker size="small" class="bubble-color" @change="(val: string) => emit('command', 'foreColor', val)" />
         </el-tooltip>
       </div>
@@ -133,6 +148,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+:deep(.editor-tooltip-nohit) {
+  pointer-events: none;
+}
+
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;

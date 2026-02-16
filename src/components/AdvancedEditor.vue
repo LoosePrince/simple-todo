@@ -6,9 +6,9 @@ import { AlignLeft, AlignCenter, AlignRight } from 'lucide-vue-next'
 /** 树形节点：类似 HTML 序列化为 JSON，支持子节点，加粗/斜体等内联格式保存在子节点中 */
 export type EditorNode =
   | { type: 'text'; value: string }
-  | { type: 'p'; id?: string; children: EditorNode[] }
-  | { type: 'h1'; id?: string; children: EditorNode[] }
-  | { type: 'h2'; id?: string; children: EditorNode[] }
+  | { type: 'p'; id?: string; align?: 'left' | 'center' | 'right'; children: EditorNode[] }
+  | { type: 'h1'; id?: string; align?: 'left' | 'center' | 'right'; children: EditorNode[] }
+  | { type: 'h2'; id?: string; align?: 'left' | 'center' | 'right'; children: EditorNode[] }
   | { type: 'strong'; children: EditorNode[] }
   | { type: 'em'; children: EditorNode[] }
   | { type: 'ul'; id?: string; children: EditorNode[] }
@@ -83,12 +83,22 @@ const nodeToHtml = (node: EditorNode): string => {
   }
   if (node.type === 'p' || node.type === 'h1' || node.type === 'h2') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
-    return `<${node.type} class="editor-block" data-id="${node.id ?? genId()}">${inner}</${node.type}>`
+    const align = (node as { align?: string }).align
+    const alignStyle = align && align !== 'left' ? ` style="text-align: ${align}"` : ''
+    const alignData = align ? ` data-align="${align}"` : ''
+    return `<${node.type} class="editor-block" data-id="${node.id ?? genId()}"${alignData}${alignStyle}>${inner}</${node.type}>`
   }
   return ''
 }
 
 const nodesToHtml = (nodes: EditorNode[]) => nodes.map(nodeToHtml).join('')
+
+function getBlockAlign(el: HTMLElement): 'left' | 'center' | 'right' {
+  const raw = el.style?.textAlign || el.getAttribute('data-align') || (typeof getComputedStyle !== 'undefined' ? getComputedStyle(el).textAlign : '')
+  if (raw === 'center') return 'center'
+  if (raw === 'right') return 'right'
+  return 'left'
+}
 
 // DOM 转树形节点（保留加粗、斜体、列表等子节点）
 const collectChildren = (el: HTMLElement): EditorNode[] => {
@@ -144,7 +154,8 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
     } else if (tag === 'em' || tag === 'i') {
       out.push({ type: 'em', children: collectChildren(child) })
     } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
-      out.push({ type: tag as 'p' | 'h1' | 'h2', id, children: collectChildren(child) })
+      const align = getBlockAlign(child)
+      out.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(child) })
     } else if (tag === 'ul' || tag === 'ol') {
       const listChildren: EditorNode[] = []
       child.querySelectorAll(':scope > li').forEach(li => {
@@ -222,7 +233,8 @@ const domToNodes = (): EditorNode[] => {
       const ap = child.getAttribute('data-asset-path') ?? ''
       roots.push({ type: 'file', id, url, fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
     } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
-      roots.push({ type: tag as 'p' | 'h1' | 'h2', id, children: collectChildren(child) })
+      const align = getBlockAlign(child)
+      roots.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(child) })
     } else if (tag === 'ul' || tag === 'ol') {
       const listChildren: EditorNode[] = []
       child.querySelectorAll(':scope > li').forEach(li => {
@@ -287,7 +299,10 @@ function domToNodesFromContainer(div: HTMLElement): EditorNode[] {
         const fs = el.getAttribute('data-file-size')
         const ap = el.getAttribute('data-asset-path') ?? ''
         roots.push({ type: 'file', id, url: el.getAttribute('data-url') ?? '', fileName: name, fileSize: fs != null && fs !== '' ? parseInt(fs, 10) : undefined, assetPath: ap || undefined })
-      } else if (tag === 'p' || tag === 'h1' || tag === 'h2') roots.push({ type: tag as 'p' | 'h1' | 'h2', id, children: collectChildren(el) })
+      } else if (tag === 'p' || tag === 'h1' || tag === 'h2') {
+        const align = getBlockAlign(el)
+        roots.push({ type: tag as 'p' | 'h1' | 'h2', id, ...(align !== 'left' ? { align } : {}), children: collectChildren(el) })
+      }
       else if (tag === 'ul' || tag === 'ol') {
         const listChildren: EditorNode[] = []
         el.querySelectorAll(':scope > li').forEach(li => {
@@ -385,6 +400,10 @@ const execCommand = (command: string, value?: string) => {
     document.execCommand('formatBlock', false, value)
   } else if (command === 'justifyLeft' || command === 'justifyCenter' || command === 'justifyRight') {
     document.execCommand(command, false)
+  } else if (command === 'undo') {
+    document.execCommand('undo', false)
+  } else if (command === 'redo') {
+    document.execCommand('redo', false)
   } else {
     document.execCommand(command, false, value)
   }

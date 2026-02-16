@@ -12,6 +12,10 @@
         "placeholder": "添加新的代办事项...",
         "detailTitle": "代办详情"
     },
+    "detail": {
+        "saved": "已保存",
+        "saveShortcut": "保存 (Ctrl+S)"
+    },
     "settings": {
         "title": "设置",
         "language": "语言",
@@ -36,6 +40,8 @@
         "toolbarAlignLeft": "左对齐",
         "toolbarAlignCenter": "居中",
         "toolbarAlignRight": "右对齐",
+        "toolbarUndo": "撤销",
+        "toolbarRedo": "重做",
         "toolbarInsertImage": "插入图片",
         "toolbarInsertFile": "插入文件",
         "bubbleBold": "加粗",

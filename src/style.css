@@ -19,3 +19,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
 }
+
+/* 编辑器工具栏 tooltip 浮层不参与鼠标事件，避免挡住按钮/编辑区 */
+.editor-tooltip-nohit {
+  pointer-events: none;
+}

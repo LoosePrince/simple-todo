@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTodoStore } from '../store/todo'
 import { useSettingsStore } from '../store/settings'
@@ -12,6 +12,7 @@ import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { CheckCircle, CircleAlert } from 'lucide-vue-next'
 import AdvancedEditor, { type EditorNode } from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 
@@ -34,6 +35,9 @@ const contextMenu = ref<{ x: number; y: number; type: 'image' | 'file'; assetPat
 const menuPosition = ref({ left: 0, top: 0 })
 const contextMenuRef = ref<HTMLElement | null>(null)
 const EDGE_PAD = 8
+/** 最近一次成功保存时的内容快照，用于判断是否脏与自动保存后更新 */
+const lastSavedJson = ref<string>('')
+const isDirty = computed(() => JSON.stringify(blocks.value) !== lastSavedJson.value)
 
 watch(contextMenu, (val) => {
   if (!val) return
@@ -67,9 +71,35 @@ async function loadDetail() {
     blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
   }
   await backfillFileSizes()
+  lastSavedJson.value = JSON.stringify(blocks.value)
 }
 
 let unlistenDetail: (() => void) | null = null
+
+function onDetailKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key === 's') {
+    e.preventDefault()
+    saveDetail()
+    return
+  }
+  const inEditor = document.activeElement?.closest('.advanced-editor-container')
+  if (!inEditor) return
+  if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    handleCommand('undo')
+  } else if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.shiftKey && e.key === 'z')) {
+    e.preventDefault()
+    handleCommand('redo')
+  } else if (e.ctrlKey && e.key === 'b') {
+    e.preventDefault()
+    editorRef.value?.saveSelection?.()
+    handleCommand('bold')
+  } else if (e.ctrlKey && e.key === 'i') {
+    e.preventDefault()
+    editorRef.value?.saveSelection?.()
+    handleCommand('italic')
+  }
+}
 
 onMounted(async () => {
   if (!todoItem) {
@@ -79,13 +109,16 @@ onMounted(async () => {
   await loadDetail()
 
   unlistenDetail = await listen<{ folder_name: string }>('todo-detail-changed', (e) => {
-    if (e.payload.folder_name === todoItem?.folder_name) {
-      loadDetail()
-    }
+    if (e.payload.folder_name !== todoItem?.folder_name) return
+    if (isDirty.value) return
+    void loadDetail()
   })
+  window.addEventListener('keydown', onDetailKeydown)
 })
 onUnmounted(() => {
   unlistenDetail?.()
+  window.removeEventListener('keydown', onDetailKeydown)
+  if (autoSaveTimer) clearTimeout(autoSaveTimer)
 })
 
 async function backfillFileSizes() {
@@ -186,8 +219,10 @@ const handleImageUpload = async () => {
   }
 }
 
-const saveDetail = async () => {
+/** 执行保存（清理未引用资源 + 写盘），可选静默不弹提示；成功后更新 lastSavedJson，并恢复选区 */
+const performSave = async (silent = false) => {
   if (!todoItem) return
+  editorRef.value?.saveSelection?.()
   if (editorRef.value) editorRef.value.handleInput()
   const used = collectUsedAssetNames(blocks.value)
   const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
@@ -206,8 +241,25 @@ const saveDetail = async () => {
     folderName: todoItem.folder_name,
     content: JSON.stringify(blocks.value)
   })
-  ElMessage.success(t('common.saveSuccess') || '已保存')
+  lastSavedJson.value = JSON.stringify(blocks.value)
+  if (!silent) ElMessage.success(t('common.saveSuccess') || '已保存')
+  nextTick(() => editorRef.value?.restoreSelection?.())
 }
+
+const saveDetail = () => performSave(false)
+
+const AUTO_SAVE_DEBOUNCE_MS = 1500
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+watch(blocks, () => {
+  if (!todoItem) return
+  if (autoSaveTimer) clearTimeout(autoSaveTimer)
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null
+    if (JSON.stringify(blocks.value) !== lastSavedJson.value) {
+      performSave(true)
+    }
+  }, AUTO_SAVE_DEBOUNCE_MS)
+}, { deep: true })
 
 const onToolbarMouseDown = () => {
   editorRef.value?.saveSelection?.()
@@ -369,7 +421,13 @@ const handleDrop = async (e: DragEvent) => {
         <el-button icon="Back" circle @click="router.back()" />
         <h2>{{ todoItem?.title }}</h2>
       </div>
-      <button type="button" class="header-save-btn" @click="saveDetail">{{ t('common.save') }}</button>
+      <el-tooltip :content="isDirty ? t('detail.saveShortcut') : t('detail.saved')" placement="bottom">
+        <button type="button" class="header-save-btn" @click="saveDetail">
+          <CheckCircle v-if="!isDirty" :size="16" class="save-icon" />
+          <CircleAlert v-else :size="16" class="save-icon" />
+          {{ isDirty ? t('common.save') : t('detail.saved') }}
+        </button>
+      </el-tooltip>
     </div>
 
     <div class="editor-wrapper">
@@ -457,6 +515,9 @@ const handleDrop = async (e: DragEvent) => {
 
 .header-save-btn {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 14px;
   font-size: 13px;
   font-family: var(--app-font-family);
@@ -466,6 +527,10 @@ const handleDrop = async (e: DragEvent) => {
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
+}
+
+.header-save-btn .save-icon {
+  flex-shrink: 0;
 }
 
 .header-save-btn:hover {
