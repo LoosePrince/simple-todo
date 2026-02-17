@@ -64,14 +64,14 @@ const foldInsertAfterText = computed(() => t('editor.foldInsertAfter'))
 
 const nodeToHtml = (node: EditorNode): string => {
   if (node.type === 'text') return escapeHtml(node.value)
-  
+
   if (node.type === 'image') {
     const w = node.widthPercent ?? 100
     const align = node.align ?? 'left'
     const ap = node.assetPath ?? ''
     return `<span class="image-block-wrapper editor-block" data-id="${node.id}" data-align="${align}" data-width-percent="${w}" data-asset-path="${escapeHtml(ap)}" style="display: block; text-align: ${align}; margin: 8px 0;"><img class="image-block" data-id="${node.id}" data-width-percent="${w}" data-align="${align}" data-asset-path="${escapeHtml(ap)}" src="${node.url}" style="width: ${w}%; max-width: 100%; display: inline-block; vertical-align: middle; border-radius: 8px; cursor: pointer;" contenteditable="false" /><br class="asset-trailing-br"></span>`
   }
-  
+
   if (node.type === 'file') {
     const name = escapeHtml(node.fileName ?? '')
     const url = node.url ?? ''
@@ -84,14 +84,14 @@ const nodeToHtml = (node: EditorNode): string => {
     const alignData = align !== 'left' ? ` data-align="${align}"` : ''
     return `<span class="editor-block file-block-wrapper" data-id="${node.id}" data-url="${escapeHtml(url)}" data-asset-path="${escapeHtml(ap)}"${alignData} style="display: block; ${alignStyle} margin: 8px 0;"><span class="file-block" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card" contenteditable="false"><span class="file-icon"${extAttr}><span class="file-icon-fallback">📄</span><img class="file-icon-img" alt=""></span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span><br class="asset-trailing-br"></span>`
   }
-  
+
   if (node.type === 'code') {
     const lang = node.language || 'text'
     const insertLabel = escapeHtml(foldInsertAfterText.value)
     const copyLabel = escapeHtml(t('editor.codeCopy'))
     return `<span class="editor-block code-block-wrapper" data-id="${node.id}" data-language="${escapeHtml(lang)}" style="display: block; margin: 12px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><span class="code-card"><div class="code-header"><span class="code-lang">${escapeHtml(lang)}</span><div class="code-header-btns"><button type="button" class="fold-copy-btn" title="${copyLabel}"><span class="copy-icon-placeholder"></span></button><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div></div><div class="code-editor" contenteditable="true" spellcheck="false">${escapeHtml(node.content)}</div></span></span><br class="asset-trailing-br"></span>`
   }
-  
+
   if (node.type === 'fold') {
     const folded = node.folded ?? false
     const title = escapeHtml(foldTitleText.value)
@@ -99,32 +99,32 @@ const nodeToHtml = (node: EditorNode): string => {
     const childrenHtml = (node.children || []).map(nodeToHtml).join('') || '<p class="editor-block"><br></p>'
     return `<span class="editor-block fold-block" data-id="${node.id}" data-folded="${folded}" style="display: block; margin: 20px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><div class="fold-line-top"></div><div class="fold-header"><button type="button" class="fold-toggle-btn">${folded ? '▶' : '▼'}</button><span class="fold-title">${title}</span><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div><div class="fold-content" contenteditable="true" style="display: ${folded ? 'none' : 'block'};">${childrenHtml}</div><div class="fold-line-bottom"></div></span><br class="asset-trailing-br"></span>`
   }
-  
+
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
   if (node.type === 'em') return `<em>${(node.children || []).map(nodeToHtml).join('')}</em>`
   if (node.type === 'color') return `<span style="color: ${escapeHtml(node.color)}">${(node.children || []).map(nodeToHtml).join('')}</span>`
-  
+
   if (node.type === 'li') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
     return `<li class="editor-block" data-id="${node.id ?? genId()}">${inner}</li>`
   }
-  
+
   if (node.type === 'ul' || node.type === 'ol') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<li><br></li>'
     return `<${node.type} class="editor-block list-block" data-id="${node.id ?? genId()}">${inner}</${node.type}>`
   }
-  
+
   if (node.type === 'taskList') {
     const inner = (node.children || []).map(nodeToHtml).join('')
     return `<ul class="editor-block task-list" data-id="${node.id ?? genId()}" data-type="task">${inner || '<li class="editor-block task-item" data-id="' + genId() + '" data-checked="false"><input type="checkbox" class="task-item-checkbox" contenteditable="false"><span class="task-item-content"><br></span></li>'}</ul>`
   }
-  
+
   if (node.type === 'taskItem') {
     const checked = node.checked ?? false
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
     return `<li class="editor-block task-item" data-id="${node.id ?? genId()}" data-checked="${checked}"><input type="checkbox" class="task-item-checkbox" contenteditable="false"${checked ? ' checked' : ''}><span class="task-item-content">${inner}</span></li>`
   }
-  
+
   if (node.type === 'p' || node.type === 'h1' || node.type === 'h2') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
     const align = (node as any).align
@@ -132,7 +132,7 @@ const nodeToHtml = (node: EditorNode): string => {
     const alignData = align ? ` data-align="${align}"` : ''
     return `<${node.type} class="editor-block" data-id="${node.id ?? genId()}"${alignData}${alignStyle}>${inner}</${node.type}>`
   }
-  
+
   return ''
 }
 
@@ -251,8 +251,8 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
         const mid = img.getAttribute('data-id') ?? id
         const url = (img as HTMLImageElement).src
         const wp = img.getAttribute('data-width-percent')
-        const al = img.getAttribute('data-align')
-        const ap = img.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
+        const al = child.getAttribute('data-align') ?? img.getAttribute('data-align')
+        const ap = child.getAttribute('data-asset-path') ?? img.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
         out.push({
           type: 'image',
           id: mid,
@@ -358,8 +358,8 @@ function domToNodesFromContainer(container: HTMLElement): EditorNode[] {
         const mid = img.getAttribute('data-id') ?? id
         const url = (img as HTMLImageElement).src
         const wp = img.getAttribute('data-width-percent')
-        const al = img.getAttribute('data-align')
-        const ap = img.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
+        const al = child.getAttribute('data-align') ?? img.getAttribute('data-align')
+        const ap = child.getAttribute('data-asset-path') ?? img.getAttribute('data-asset-path') ?? child.getAttribute('data-asset-path') ?? ''
         roots.push({
           type: 'image',
           id: mid,
@@ -572,11 +572,11 @@ function handleBeforeInput(e: Event) {
         const prev = wrapper.previousElementSibling as HTMLElement | null
         if (prev) {
           e.preventDefault()
-          const isSpecial = prev.classList.contains('image-block-wrapper') || 
-                          prev.classList.contains('file-block-wrapper') || 
-                          prev.classList.contains('code-block-wrapper') || 
-                          prev.classList.contains('fold-block')
-          
+          const isSpecial = prev.classList.contains('image-block-wrapper') ||
+            prev.classList.contains('file-block-wrapper') ||
+            prev.classList.contains('code-block-wrapper') ||
+            prev.classList.contains('fold-block')
+
           if (isSpecial) {
             // 如果前一个是特殊块，先选中它
             const newRange = document.createRange()
@@ -646,12 +646,12 @@ function handleBeforeInput(e: Event) {
   const isFold = wrapper.classList.contains('fold-block')
   const trailingBr = wrapper.querySelector('.asset-trailing-br')
   const isInAssetStructure = img?.contains(container) || fileCard?.contains(container) || (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) || (isFold && containerEl?.closest('.fold-header'))
-  
+
   if (isInAssetStructure && inputEvent.inputType !== 'deleteContentBackward') {
     e.preventDefault()
     return
   }
-  
+
   const isAtTrailingBrOrEnd = (trailingBr && (container === trailingBr || container.parentElement === trailingBr.parentElement)) || (container === wrapper && range.startOffset >= (wrapper.childNodes.length || 1))
   if (isAtTrailingBrOrEnd) {
     if (inputEvent.inputType === 'insertLineBreak' || (inputEvent.inputType === 'insertText' && inputEvent.data === '\n')) return
@@ -887,7 +887,7 @@ function selectionChangeHandler() {
 
 function onEditorClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  
+
   const foldCopy = target.closest('.fold-copy-btn') as HTMLElement | null
   if (foldCopy) {
     e.preventDefault()
@@ -895,7 +895,7 @@ function onEditorClick(e: MouseEvent) {
     if (editor) navigator.clipboard.writeText(editor.innerText).then(() => ElMessage.success(t('editor.copySuccess')))
     return
   }
-  
+
   const foldInsert = target.closest('.fold-insert-btn') as HTMLElement | null
   if (foldInsert) {
     e.preventDefault()
@@ -912,7 +912,7 @@ function onEditorClick(e: MouseEvent) {
     }
     return
   }
-  
+
   const foldToggle = target.closest('.fold-toggle-btn')
   if (foldToggle) {
     e.preventDefault()
@@ -927,7 +927,7 @@ function onEditorClick(e: MouseEvent) {
     }
     return
   }
-  
+
   const codeCard = target.closest('.code-card') as HTMLElement | null
   if (codeCard) {
     const editor = codeCard.querySelector('.code-editor') as HTMLElement | null
@@ -935,23 +935,27 @@ function onEditorClick(e: MouseEvent) {
     selectedImageId.value = selectedFileId.value = null
     return
   }
-  
+
   const foldBlockStructure = target.closest('.fold-block') as HTMLElement | null
   if (foldBlockStructure && !target.closest('.fold-content')) {
     (foldBlockStructure.querySelector('.fold-content') as HTMLElement | null)?.focus()
     return
   }
-  
+
   const taskCheckbox = target.closest('.task-item-checkbox') as HTMLInputElement | null
   if (taskCheckbox) {
     e.preventDefault()
-    const id = taskCheckbox.closest('li.task-item')?.getAttribute('data-id')
-    if (id && Array.isArray(props.modelValue)) emit('update:modelValue', updateTaskItemCheckedInTree(props.modelValue, id, !taskCheckbox.checked))
+    const taskItem = taskCheckbox.closest('li.task-item')
+    const id = taskItem?.getAttribute('data-id')
+    const currentChecked = taskItem?.getAttribute('data-checked') === 'true'
+    if (id && Array.isArray(props.modelValue)) {
+      emit('update:modelValue', updateTaskItemCheckedInTree(props.modelValue, id, !currentChecked))
+    }
     return
   }
-  
+
   if (target.closest('.image-toolbar-root') || target.closest('.file-toolbar-root')) return
-  
+
   const img = target.closest('img.image-block') as HTMLElement | null || target.closest('.image-block-wrapper')?.querySelector('img.image-block') as HTMLElement | null
   if (img) {
     const id = img.getAttribute('data-id')
@@ -966,7 +970,7 @@ function onEditorClick(e: MouseEvent) {
     selectedFileId.value = null
     return
   }
-  
+
   const fileWrapper = target.closest('.file-block-wrapper') as HTMLElement | null
   if (fileWrapper) {
     const id = fileWrapper.getAttribute('data-id')
@@ -982,7 +986,7 @@ function onEditorClick(e: MouseEvent) {
     selectedImageId.value = null
     return
   }
-  
+
   selectedImageId.value = selectedFileId.value = null
 }
 
@@ -1088,17 +1092,17 @@ function insertNodesAtSelection(newNodes: EditorNode | EditorNode[]) {
 }
 
 
-defineExpose({ 
-  execCommand, 
-  handleInput, 
-  saveSelection, 
-  restoreSelection, 
-  getCursorBlockIndex: () => lastCursorBlockIndex.value, 
-  insertTaskListAtSelection, 
-  insertPlainText, 
-  insertCodeBlock, 
-  insertFoldBlock, 
-  insertNodesAtSelection 
+defineExpose({
+  execCommand,
+  handleInput,
+  saveSelection,
+  restoreSelection,
+  getCursorBlockIndex: () => lastCursorBlockIndex.value,
+  insertTaskListAtSelection,
+  insertPlainText,
+  insertCodeBlock,
+  insertFoldBlock,
+  insertNodesAtSelection
 })
 </script>
 
@@ -1115,15 +1119,27 @@ defineExpose({
         <input type="number" class="image-toolbar-input" min="10" max="100"
           :value="selectedImageNode.widthPercent ?? 100"
           @change="(e) => updateImageNode({ widthPercent: Math.min(100, Math.max(10, Number((e.target as HTMLInputElement).value) || 100)) })" />
-        <button type="button" class="image-toolbar-btn" title="左对齐" @click="updateImageNode({ align: 'left' })"><AlignLeft :size="16" /></button>
-        <button type="button" class="image-toolbar-btn" title="居中" @click="updateImageNode({ align: 'center' })"><AlignCenter :size="16" /></button>
-        <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })"><AlignRight :size="16" /></button>
+        <button type="button" class="image-toolbar-btn" title="左对齐" @click="updateImageNode({ align: 'left' })">
+          <AlignLeft :size="16" />
+        </button>
+        <button type="button" class="image-toolbar-btn" title="居中" @click="updateImageNode({ align: 'center' })">
+          <AlignCenter :size="16" />
+        </button>
+        <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })">
+          <AlignRight :size="16" />
+        </button>
       </div>
       <div v-if="selectedFileId && selectedFileNode" class="file-toolbar-root file-toolbar"
         :style="{ top: selectedFileRect.top + 'px', left: selectedFileRect.left + 'px' }">
-        <button type="button" class="file-toolbar-btn" title="左对齐" @click="updateFileNode({ align: 'left' })"><AlignLeft :size="16" /></button>
-        <button type="button" class="file-toolbar-btn" title="居中" @click="updateFileNode({ align: 'center' })"><AlignCenter :size="16" /></button>
-        <button type="button" class="file-toolbar-btn" title="右对齐" @click="updateFileNode({ align: 'right' })"><AlignRight :size="16" /></button>
+        <button type="button" class="file-toolbar-btn" title="左对齐" @click="updateFileNode({ align: 'left' })">
+          <AlignLeft :size="16" />
+        </button>
+        <button type="button" class="file-toolbar-btn" title="居中" @click="updateFileNode({ align: 'center' })">
+          <AlignCenter :size="16" />
+        </button>
+        <button type="button" class="file-toolbar-btn" title="右对齐" @click="updateFileNode({ align: 'right' })">
+          <AlignRight :size="16" />
+        </button>
       </div>
     </Teleport>
   </div>
