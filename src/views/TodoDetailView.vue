@@ -361,7 +361,8 @@ const handleFileUpload = async () => {
       id: crypto.randomUUID(),
       url: convertFileSrc(targetPath),
       fileName: displayName,
-      assetPath
+      assetPath,
+      fileSize: fileData.byteLength
     }
     editorRef.value?.insertNodesAtSelection?.(newBlock)
   } catch (e) {

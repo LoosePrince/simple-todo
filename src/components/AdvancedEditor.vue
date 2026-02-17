@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ElMessage } from 'element-plus';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
-import { AlignCenter, AlignLeft, AlignRight, Copy } from 'lucide-vue-next';
+import { AlignCenter, AlignLeft, AlignRight } from 'lucide-vue-next';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -41,23 +41,7 @@ const emit = defineEmits<{
 
 const editorRef = ref<HTMLDivElement | null>(null)
 const isInternalUpdate = ref(false)
-/** 选区在编辑器内时更新的“光标所在块”索引，用于失焦后仍能在该位置插入 */
-const lastCursorBlockIndex = ref(-1)
-const selectedImageId = ref<string | null>(null)
-const selectedImageRect = ref({ top: 0, left: 0 })
-const imageToolbarRef = ref<HTMLElement | null>(null)
-const selectedFileId = ref<string | null>(null)
-const selectedFileRect = ref({ top: 0, left: 0 })
-const fileToolbarRef = ref<HTMLElement | null>(null)
-const IMAGE_TOOLBAR_APPROX_HEIGHT = 44
-const IMAGE_TOOLBAR_APPROX_WIDTH = 220
-const FILE_TOOLBAR_APPROX_HEIGHT = 44
-const FILE_TOOLBAR_APPROX_WIDTH = 180
-const IMAGE_TOOLBAR_PADDING = 8
-
 const { t } = useI18n()
-const foldTitleText = computed(() => t('editor.foldTitle'))
-const foldInsertAfterText = computed(() => t('editor.foldInsertAfter'))
 
 const genId = () => crypto.randomUUID()
 
@@ -73,15 +57,21 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// 树形节点转 HTML
+const foldTitleText = computed(() => t('editor.foldTitle'))
+const foldInsertAfterText = computed(() => t('editor.foldInsertAfter'))
+
+// --- Recursive HTML Renderer ---
+
 const nodeToHtml = (node: EditorNode): string => {
   if (node.type === 'text') return escapeHtml(node.value)
+  
   if (node.type === 'image') {
     const w = node.widthPercent ?? 100
     const align = node.align ?? 'left'
     const ap = node.assetPath ?? ''
-    return `<span class="image-block-wrapper editor-block" data-id="${node.id}" data-align="${align}" data-width-percent="${w}" data-asset-path="${escapeHtml(ap)}" style="display: block; text-align: ${align}; margin: 8px 0;"><img class="image-block" data-id="${node.id}" data-width-percent="${w}" data-align="${align}" data-asset-path="${escapeHtml(ap)}" src="${node.url}" style="width: ${w}%; max-width: 100%; display: inline-block; vertical-align: middle; border-radius: 8px; cursor: pointer;" contenteditable="false" onerror="console.error('Image load failed:', this.src)" /><br class="asset-trailing-br"></span>`
+    return `<span class="image-block-wrapper editor-block" data-id="${node.id}" data-align="${align}" data-width-percent="${w}" data-asset-path="${escapeHtml(ap)}" style="display: block; text-align: ${align}; margin: 8px 0;"><img class="image-block" data-id="${node.id}" data-width-percent="${w}" data-align="${align}" data-asset-path="${escapeHtml(ap)}" src="${node.url}" style="width: ${w}%; max-width: 100%; display: inline-block; vertical-align: middle; border-radius: 8px; cursor: pointer;" contenteditable="false" /><br class="asset-trailing-br"></span>`
   }
+  
   if (node.type === 'file') {
     const name = escapeHtml(node.fileName ?? '')
     const url = node.url ?? ''
@@ -94,52 +84,132 @@ const nodeToHtml = (node: EditorNode): string => {
     const alignData = align !== 'left' ? ` data-align="${align}"` : ''
     return `<span class="editor-block file-block-wrapper" data-id="${node.id}" data-url="${escapeHtml(url)}" data-asset-path="${escapeHtml(ap)}"${alignData} style="display: block; ${alignStyle} margin: 8px 0;"><span class="file-block" style="display: inline-block; vertical-align: middle; margin: 0 5px;"><span class="file-card" contenteditable="false"><span class="file-icon"${extAttr}><span class="file-icon-fallback">📄</span><img class="file-icon-img" alt=""></span><span class="file-name">${name}</span>${sizeStr ? `<span class="file-size">${escapeHtml(sizeStr)}</span>` : ''}</span></span><br class="asset-trailing-br"></span>`
   }
+  
   if (node.type === 'code') {
     const lang = node.language || 'text'
     const insertLabel = escapeHtml(foldInsertAfterText.value)
     const copyLabel = escapeHtml(t('editor.codeCopy'))
-    return `<div class="editor-block code-block-wrapper" data-id="${node.id}" data-language="${escapeHtml(lang)}" contenteditable="false" style="margin: 12px 0;"><div class="code-card"><div class="code-header"><span class="code-lang">${escapeHtml(lang)}</span><div class="code-header-btns"><button type="button" class="fold-copy-btn" title="${copyLabel}"><span class="copy-icon-placeholder"></span></button><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div></div><div class="code-editor" contenteditable="true" spellcheck="false">${escapeHtml(node.content)}</div></div></div>`
+    return `<span class="editor-block code-block-wrapper" data-id="${node.id}" data-language="${escapeHtml(lang)}" style="display: block; margin: 12px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><span class="code-card"><div class="code-header"><span class="code-lang">${escapeHtml(lang)}</span><div class="code-header-btns"><button type="button" class="fold-copy-btn" title="${copyLabel}"><span class="copy-icon-placeholder"></span></button><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div></div><div class="code-editor" contenteditable="true" spellcheck="false">${escapeHtml(node.content)}</div></span></span><br class="asset-trailing-br"></span>`
   }
+  
   if (node.type === 'fold') {
     const folded = node.folded ?? false
     const title = escapeHtml(foldTitleText.value)
     const insertLabel = escapeHtml(foldInsertAfterText.value)
-    return `<div class="editor-block fold-block" data-id="${node.id}" data-folded="${folded}" contenteditable="false" style="margin: 20px 0;"><div class="fold-line-top"></div><div class="fold-header"><button type="button" class="fold-toggle-btn">${folded ? '▶' : '▼'}</button><span class="fold-title">${title}</span><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div><div class="fold-content" contenteditable="true" style="display: ${folded ? 'none' : 'block'};">${(node.children || []).map(nodeToHtml).join('') || '<p class="editor-block"><br></p>'}</div><div class="fold-line-bottom"></div></div>`
+    const childrenHtml = (node.children || []).map(nodeToHtml).join('') || '<p class="editor-block"><br></p>'
+    return `<span class="editor-block fold-block" data-id="${node.id}" data-folded="${folded}" style="display: block; margin: 20px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><div class="fold-line-top"></div><div class="fold-header"><button type="button" class="fold-toggle-btn">${folded ? '▶' : '▼'}</button><span class="fold-title">${title}</span><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div><div class="fold-content" contenteditable="true" style="display: ${folded ? 'none' : 'block'};">${childrenHtml}</div><div class="fold-line-bottom"></div></span><br class="asset-trailing-br"></span>`
   }
+  
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
   if (node.type === 'em') return `<em>${(node.children || []).map(nodeToHtml).join('')}</em>`
-  if (node.type === 'color') {
-    const color = node.color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(node.color) ? node.color : (node.color || '#000000')
-    return `<span style="color: ${escapeHtml(color)}">${(node.children || []).map(nodeToHtml).join('')}</span>`
-  }
+  if (node.type === 'color') return `<span style="color: ${escapeHtml(node.color)}">${(node.children || []).map(nodeToHtml).join('')}</span>`
+  
   if (node.type === 'li') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
     return `<li class="editor-block" data-id="${node.id ?? genId()}">${inner}</li>`
   }
+  
   if (node.type === 'ul' || node.type === 'ol') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<li><br></li>'
     return `<${node.type} class="editor-block list-block" data-id="${node.id ?? genId()}">${inner}</${node.type}>`
   }
+  
   if (node.type === 'taskList') {
-    const inner = (node.children || []).map(nodeToHtml).join('') || ''
+    const inner = (node.children || []).map(nodeToHtml).join('')
     return `<ul class="editor-block task-list" data-id="${node.id ?? genId()}" data-type="task">${inner || '<li class="editor-block task-item" data-id="' + genId() + '" data-checked="false"><input type="checkbox" class="task-item-checkbox" contenteditable="false"><span class="task-item-content"><br></span></li>'}</ul>`
   }
+  
   if (node.type === 'taskItem') {
     const checked = node.checked ?? false
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
     return `<li class="editor-block task-item" data-id="${node.id ?? genId()}" data-checked="${checked}"><input type="checkbox" class="task-item-checkbox" contenteditable="false"${checked ? ' checked' : ''}><span class="task-item-content">${inner}</span></li>`
   }
+  
   if (node.type === 'p' || node.type === 'h1' || node.type === 'h2') {
     const inner = (node.children || []).map(nodeToHtml).join('') || '<br>'
-    const align = (node as { align?: string }).align
+    const align = (node as any).align
     const alignStyle = align && align !== 'left' ? ` style="text-align: ${align}"` : ''
     const alignData = align ? ` data-align="${align}"` : ''
     return `<${node.type} class="editor-block" data-id="${node.id ?? genId()}"${alignData}${alignStyle}>${inner}</${node.type}>`
   }
+  
   return ''
 }
 
 const nodesToHtml = (nodes: EditorNode[]) => nodes.map(nodeToHtml).join('')
+
+// --- Decoration Logic ---
+
+async function updateFileIcons() {
+  const el = editorRef.value
+  if (!el) return
+  const icons = el.querySelectorAll<HTMLElement>('.file-icon[data-ext]')
+  const exts = new Set<string>()
+  icons.forEach(node => {
+    const ext = node.getAttribute('data-ext')
+    if (ext) exts.add(ext)
+  })
+  const cache = new Map<string, string>()
+  for (const ext of exts) {
+    try {
+      const b64 = await invoke<string>('get_file_icon', { extension: ext })
+      if (b64) cache.set(ext, b64)
+    } catch (_) { }
+  }
+  icons.forEach(node => {
+    const ext = node.getAttribute('data-ext')
+    const img = node.querySelector<HTMLImageElement>('.file-icon-img')
+    if (!ext || !img) return
+    const dataUrl = cache.get(ext)
+    if (dataUrl) {
+      img.src = `data:image/png;base64,${dataUrl}`
+      img.style.display = ''
+    }
+  })
+}
+
+function renderStaticIcons() {
+  const el = editorRef.value
+  if (!el) return
+  const placeholders = el.querySelectorAll('.copy-icon-placeholder')
+  placeholders.forEach(p => {
+    p.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+  })
+}
+
+function updateCodeHighlighting() {
+  const el = editorRef.value
+  if (!el) return
+  const codeEditors = el.querySelectorAll<HTMLElement>('.code-editor')
+  codeEditors.forEach((editor) => {
+    const wrapper = editor.closest('.code-block-wrapper') as HTMLElement | null
+    const lang = wrapper?.getAttribute('data-language') || 'text'
+    if (!editor.classList.contains('hljs')) {
+      editor.classList.add('hljs')
+    }
+    if (document.activeElement !== editor) {
+      const code = editor.innerText
+      if (code.trim()) {
+        try {
+          const highlighted = hljs.highlight(code, { language: lang }).value
+          editor.innerHTML = highlighted
+        } catch (e) {
+          console.error('Highlight error:', e)
+        }
+      } else {
+        editor.innerHTML = ''
+      }
+    }
+  })
+}
+
+function postRender() {
+  updateFileIcons()
+  updateCodeHighlighting()
+  renderStaticIcons()
+}
+
+// --- DOM to JSON Parser ---
 
 function getBlockAlign(el: HTMLElement): 'left' | 'center' | 'right' {
   const raw = el.style?.textAlign || el.getAttribute('data-align') || (typeof getComputedStyle !== 'undefined' ? getComputedStyle(el).textAlign : '')
@@ -148,7 +218,6 @@ function getBlockAlign(el: HTMLElement): 'left' | 'center' | 'right' {
   return 'left'
 }
 
-/** 从 span 元素解析 color 样式，返回 hex 或空 */
 function getSpanColor(el: HTMLElement): string | null {
   const color = el.style?.color || (typeof getComputedStyle !== 'undefined' ? getComputedStyle(el).color : '')
   if (!color || color === 'rgba(0, 0, 0, 0)' || color === 'transparent') return null
@@ -163,7 +232,6 @@ function getSpanColor(el: HTMLElement): string | null {
   return null
 }
 
-// DOM 转树形节点（保留加粗、斜体、列表等子节点）
 const collectChildren = (el: HTMLElement): EditorNode[] => {
   const out: EditorNode[] = []
   for (const node of el.childNodes) {
@@ -207,7 +275,6 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
         align: (al === 'center' || al === 'right' ? al : 'left') as 'left' | 'center' | 'right'
       })
     } else if (child.classList.contains('file-block')) {
-      // file-block 可能在 file-block-wrapper 内部，需要向上查找 wrapper 获取 assetPath
       const wrapper = child.closest('.file-block-wrapper') as HTMLElement | null
       const name = child.querySelector('.file-name')?.textContent ?? ''
       const url = wrapper?.getAttribute('data-url') ?? child.getAttribute('data-url') ?? ''
@@ -231,10 +298,6 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
       const contentEl = child.querySelector('.fold-content') as HTMLElement | null
       const children = contentEl ? domToNodesFromContainer(contentEl) : []
       out.push({ type: 'fold', id, folded, children })
-    } else if (child.classList.contains('task-item-checkbox')) {
-      // skip checkbox, it is reflected in data-checked on the li
-    } else if (child.classList.contains('task-item-content')) {
-      out.push(...collectChildren(child))
     } else if (tag === 'strong' || tag === 'b') {
       out.push({ type: 'strong', children: collectChildren(child) })
     } else if (tag === 'em' || tag === 'i') {
@@ -253,13 +316,6 @@ const collectChildren = (el: HTMLElement): EditorNode[] => {
       out.push({ type: tag as 'ul' | 'ol', id, children: listChildren })
     } else if (tag === 'li') {
       out.push({ type: 'li', id, children: collectChildren(child) })
-    } else if (tag === 'ul' || tag === 'ol') {
-      const listChildren: EditorNode[] = []
-      child.querySelectorAll(':scope > li').forEach(li => {
-        listChildren.push({ type: 'li', id: (li as HTMLElement).getAttribute('data-id') ?? genId(), children: collectChildren(li as HTMLElement) })
-      })
-      if (listChildren.length === 0) listChildren.push({ type: 'li', id: genId(), children: [] })
-      out.push({ type: tag as 'ul' | 'ol', id, children: listChildren })
     } else if (tag === 'font') {
       const fontColor = child.getAttribute('color')
       if (fontColor) {
@@ -338,7 +394,6 @@ function domToNodesFromContainer(container: HTMLElement): EditorNode[] {
         roots.push(...collectTrailingBlocksFromFileBlock(child, fileCard))
       }
     } else if (child.classList.contains('file-block')) {
-      // file-block 可能在 file-block-wrapper 内部，需要向上查找 wrapper 获取 assetPath
       const wrapper = child.closest('.file-block-wrapper') as HTMLElement | null
       const fileCard = child.querySelector('.file-card')
       const name = child.querySelector('.file-name')?.textContent ?? ''
@@ -393,7 +448,6 @@ function domToNodesFromContainer(container: HTMLElement): EditorNode[] {
   return roots.length > 0 ? roots : [{ type: 'p', id: genId(), children: [] }]
 }
 
-/** 收集图片 wrapper 内 img 之后的兄弟节点并序列化为块（解决在图片后直接输入时内容被丢的问题） */
 function collectTrailingBlocksFromWrapper(wrapper: HTMLElement, img: Element): EditorNode[] {
   const temp = document.createElement('div')
   let next: ChildNode | null = img.nextSibling
@@ -409,7 +463,6 @@ function collectTrailingBlocksFromWrapper(wrapper: HTMLElement, img: Element): E
   return domToNodesFromContainer(temp)
 }
 
-/** 收集文件块内 file-card 之后的兄弟节点并序列化为块 */
 function collectTrailingBlocksFromFileBlock(wrapper: HTMLElement, fileCard: Element): EditorNode[] {
   const temp = document.createElement('div')
   let next: ChildNode | null = fileCard.nextSibling
@@ -425,13 +478,14 @@ function collectTrailingBlocksFromFileBlock(wrapper: HTMLElement, fileCard: Elem
   return domToNodesFromContainer(temp)
 }
 
+// --- Main Event Handlers ---
+
 const handleInput = () => {
   isInternalUpdate.value = true
   emit('update:modelValue', domToNodes())
   setTimeout(() => isInternalUpdate.value = false, 0)
 }
 
-/** 在当前位置插入纯文本，并触发同步 */
 function insertPlainText(text: string) {
   if (!text) return
   const normalized = text.replace(/\r\n/g, '\n')
@@ -439,11 +493,9 @@ function insertPlainText(text: string) {
   handleInput()
 }
 
-/** 粘贴：若包含文件则交给上层处理，否则当作纯文本 */
 function handlePaste(e: ClipboardEvent) {
   const data = e.clipboardData
   if (!data) return
-
   const items = Array.from(data.items || [])
   const files: File[] = []
   for (const item of items) {
@@ -452,15 +504,12 @@ function handlePaste(e: ClipboardEvent) {
       if (f) files.push(f)
     }
   }
-
   const text = data.getData('text/plain') ?? ''
-
   if (files.length > 0) {
     e.preventDefault()
     emit('paste-files', { files, text })
     return
   }
-
   e.preventDefault()
   if (!text) return
   insertPlainText(text)
@@ -471,11 +520,8 @@ function getInsertionContainer(): { container: HTMLElement | null, index: number
   const sel = window.getSelection()
   const editor = editorRef.value
   if (!sel || sel.rangeCount === 0 || !editor) return { container: editor, index: -1 }
-  
   const anchorNode = sel.anchorNode
   if (!anchorNode) return { container: editor, index: -1 }
-
-  // 寻找最近的 contenteditable="true" 容器
   let container: HTMLElement | null = null
   let curr: Node | null = anchorNode
   while (curr && curr !== editor) {
@@ -485,119 +531,158 @@ function getInsertionContainer(): { container: HTMLElement | null, index: number
     }
     curr = curr.parentNode
   }
-  
   if (!container) container = editor
-
-  // 寻找容器内的根级块
   let node: Node | null = anchorNode
   while (node && node.parentNode !== container) node = node.parentNode
-  
   if (!node) return { container, index: -1 }
-  
   const kids = container.childNodes
   for (let i = 0; i < kids.length; i++) {
     if (kids[i] === node) return { container, index: i }
   }
-  
   return { container, index: -1 }
 }
 
-/** 阻止在资产块内部（非编辑器区域）输入 */
 function handleBeforeInput(e: Event) {
   const inputEvent = e as InputEvent
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0) return
-  
   const range = selection.getRangeAt(0)
   const container = range.commonAncestorContainer
   const containerEl = container.nodeType === Node.ELEMENT_NODE ? container as HTMLElement : container.parentElement as HTMLElement | null
-  
-  const innerEditable = containerEl?.closest('.code-editor, .fold-content')
-  
-  // 处理退格键：如果光标在资产块后的第一个字符，按退格键应该选中该资产块
-  if (inputEvent.inputType === 'deleteContentBackward' && range.collapsed && range.startOffset === 0 && !innerEditable) {
-    const info = getInsertionContainer()
-    const block = (info.index >= 0 && info.container) ? info.container.childNodes[info.index] : null
-    
-    if (block) {
-      const prev = block.previousSibling as HTMLElement | null
-      if (prev && (prev.classList.contains('image-block-wrapper') || 
-                   prev.classList.contains('file-block-wrapper') || 
-                   prev.classList.contains('code-block-wrapper') || 
-                   prev.classList.contains('fold-block'))) {
-        e.preventDefault()
-        const newRange = document.createRange()
-        newRange.selectNode(prev)
-        selection.removeAllRanges()
-        selection.addRange(newRange)
-        return
+  const foldContent = containerEl?.closest('.fold-content') as HTMLElement | null
+  const codeEditor = containerEl?.closest('.code-editor') as HTMLElement | null
+
+  if (codeEditor && !foldContent) return
+  if (foldContent && !codeEditor) {
+    const isInAsset = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .code-block-wrapper')
+    const isInFoldHeader = containerEl?.closest('.fold-header')
+    if (!isInAsset && !isInFoldHeader) return
+  }
+
+  // 特殊处理退格键
+  if (inputEvent.inputType === 'deleteContentBackward' && range.collapsed) {
+    const wrapper = containerEl?.closest('.editor-block') as HTMLElement | null
+    if (wrapper) {
+      const blockStartRange = document.createRange()
+      blockStartRange.selectNodeContents(wrapper)
+      blockStartRange.collapse(true)
+      const atBlockStart = range.compareBoundaryPoints(Range.START_TO_START, blockStartRange) <= 0
+
+      if (atBlockStart) {
+        const prev = wrapper.previousElementSibling as HTMLElement | null
+        if (prev) {
+          e.preventDefault()
+          const isSpecial = prev.classList.contains('image-block-wrapper') || 
+                          prev.classList.contains('file-block-wrapper') || 
+                          prev.classList.contains('code-block-wrapper') || 
+                          prev.classList.contains('fold-block')
+          
+          if (isSpecial) {
+            // 如果前一个是特殊块，先选中它
+            const newRange = document.createRange()
+            newRange.selectNode(prev)
+            selection.removeAllRanges()
+            selection.addRange(newRange)
+          } else {
+            // 如果是普通段落且为空，直接删除
+            if ((prev.innerText || '').trim() === '') {
+              prev.remove()
+            } else {
+              // 否则将当前内容合并到上一行末尾
+              const endRange = document.createRange()
+              endRange.selectNodeContents(prev)
+              endRange.collapse(false)
+              selection.removeAllRanges()
+              selection.addRange(endRange)
+              document.execCommand('deleteContentBackward')
+            }
+          }
+          handleInput()
+          return
+        }
       }
     }
   }
 
-  if (innerEditable) return
+  if (codeEditor && foldContent) {
+    const codeBlockWrapper = codeEditor.closest('.code-block-wrapper') as HTMLElement | null
+    if (codeBlockWrapper && inputEvent.inputType === 'deleteContentBackward' && range.collapsed) {
+      const blockStartRange = document.createRange()
+      blockStartRange.selectNodeContents(codeBlockWrapper)
+      blockStartRange.collapse(true)
+      if (range.compareBoundaryPoints(Range.START_TO_START, blockStartRange) <= 0) {
+        const prev = codeBlockWrapper.previousElementSibling as HTMLElement | null
+        if (prev) {
+          e.preventDefault()
+          if ((prev.innerText || '').trim() === '') {
+            prev.remove()
+            const startRange = document.createRange()
+            startRange.selectNodeContents(codeBlockWrapper)
+            startRange.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(startRange)
+          } else {
+            const endRange = document.createRange()
+            endRange.selectNodeContents(prev)
+            endRange.collapse(false)
+            selection.removeAllRanges()
+            selection.addRange(endRange)
+            document.execCommand('deleteContentBackward')
+          }
+          handleInput()
+          return
+        }
+      }
+    }
+    return
+  }
 
   const wrapper = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .file-block, .code-block-wrapper, .fold-block') as HTMLElement | null
-  
   if (!wrapper) return
-  
+
   const img = wrapper.querySelector('img.image-block')
   const fileCard = wrapper.querySelector('.file-card')
   const codeCard = wrapper.querySelector('.code-card')
   const isFold = wrapper.classList.contains('fold-block')
   const trailingBr = wrapper.querySelector('.asset-trailing-br')
+  const isInAssetStructure = img?.contains(container) || fileCard?.contains(container) || (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) || (isFold && containerEl?.closest('.fold-header'))
   
-  const isInAssetStructure = img?.contains(container) || 
-                             fileCard?.contains(container) || 
-                             (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) ||
-                             (isFold && !containerEl?.closest('.fold-content'))
-  
-  if (isInAssetStructure) {
+  if (isInAssetStructure && inputEvent.inputType !== 'deleteContentBackward') {
     e.preventDefault()
     return
   }
   
-  const isAtTrailingBrOrEnd = (trailingBr && (container === trailingBr || container.parentElement === trailingBr.parentElement)) ||
-    (container === wrapper && range.startOffset >= (wrapper.childNodes.length || 1))
+  const isAtTrailingBrOrEnd = (trailingBr && (container === trailingBr || container.parentElement === trailingBr.parentElement)) || (container === wrapper && range.startOffset >= (wrapper.childNodes.length || 1))
   if (isAtTrailingBrOrEnd) {
-    if (inputEvent.inputType === 'insertLineBreak' || (inputEvent.inputType === 'insertText' && inputEvent.data === '\n')) {
-      return
-    }
+    if (inputEvent.inputType === 'insertLineBreak' || (inputEvent.inputType === 'insertText' && inputEvent.data === '\n')) return
     e.preventDefault()
     const wrapperParent = wrapper.parentElement
     if (!wrapperParent) return
     const newP = document.createElement('p')
     newP.className = 'editor-block'
     newP.setAttribute('data-id', genId())
-    const br = document.createElement('br')
-    newP.appendChild(br)
-    if (wrapper.nextSibling) {
-      wrapperParent.insertBefore(newP, wrapper.nextSibling)
-    } else {
-      wrapperParent.appendChild(newP)
-    }
+    newP.appendChild(document.createElement('br'))
+    if (wrapper.nextSibling) wrapperParent.insertBefore(newP, wrapper.nextSibling)
+    else wrapperParent.appendChild(newP)
     const newRange = document.createRange()
     newRange.setStart(newP, 0)
     newRange.collapse(true)
     selection.removeAllRanges()
     selection.addRange(newRange)
-    if (inputEvent.inputType === 'insertText' && inputEvent.data) {
-      document.execCommand('insertText', false, inputEvent.data)
-    }
+    if (inputEvent.inputType === 'insertText' && inputEvent.data) document.execCommand('insertText', false, inputEvent.data)
     handleInput()
     return
   }
-  
+  if (wrapper.classList.contains('fold-block') && foldContent && foldContent.contains(container)) {
+    if (!containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .code-block-wrapper')) return
+  }
   if (wrapper.contains(container) && !isInAssetStructure && container !== trailingBr && container.parentElement !== trailingBr?.parentElement) {
     e.preventDefault()
     const nextSibling = wrapper.nextSibling
     if (nextSibling) {
       const newRange = document.createRange()
-      if (nextSibling.nodeType === Node.ELEMENT_NODE) {
-        newRange.setStart(nextSibling as Node, 0)
-      } else {
-        newRange.setStartAfter(wrapper)
-      }
+      if (nextSibling.nodeType === Node.ELEMENT_NODE) newRange.setStart(nextSibling as Node, 0)
+      else newRange.setStartAfter(wrapper)
       newRange.collapse(true)
       selection.removeAllRanges()
       selection.addRange(newRange)
@@ -605,61 +690,55 @@ function handleBeforeInput(e: Event) {
   }
 }
 
-/** 处理 Enter 键：在资产后面时插入新段落 */
+
 function handleEnterKey(e: KeyboardEvent) {
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0 || !editorRef.value) return
-  
   const range = selection.getRangeAt(0)
   const container = range.commonAncestorContainer
   const containerEl = container.nodeType === Node.ELEMENT_NODE ? container as HTMLElement : container.parentElement as HTMLElement | null
-  
-  if (containerEl?.closest('.code-editor, .fold-content')) {
-    return
-  }
-
+  if (containerEl?.closest('.code-editor')) return
   const wrapper = containerEl?.closest('.image-block-wrapper, .file-block-wrapper, .file-block, .code-block-wrapper, .fold-block') as HTMLElement | null
   if (!wrapper) return
-  
   const img = wrapper.querySelector('img.image-block')
   const fileCard = wrapper.querySelector('.file-card')
   const codeCard = wrapper.querySelector('.code-card')
   const isFold = wrapper.classList.contains('fold-block')
   const trailingBr = wrapper.querySelector('.asset-trailing-br')
-  
-  const isInAssetStructure = img?.contains(container) || 
-                             fileCard?.contains(container) || 
-                             (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) ||
-                             (isFold && !containerEl?.closest('.fold-content'))
+  const isInAssetStructure = img?.contains(container) || fileCard?.contains(container) || (codeCard?.contains(container) && !containerEl?.closest('.code-editor')) || (isFold && containerEl?.closest('.fold-header'))
   if (isInAssetStructure) return
-  
-  const isInsideWrapper = wrapper === container || wrapper.contains(container)
   const isAtEndOfWrapper = container === wrapper && range.startOffset >= wrapper.childNodes.length
   const isAtTrailingBr = trailingBr && (container === trailingBr || container.parentElement === trailingBr.parentElement || range.startContainer === trailingBr)
-  const isAfterAsset = isInsideWrapper && (isAtTrailingBr || isAtEndOfWrapper || (container === wrapper && range.startOffset > 0))
-  
+  const isAfterAsset = (wrapper === container || wrapper.contains(container)) && (isAtTrailingBr || isAtEndOfWrapper || (container === wrapper && range.startOffset > 0))
   const wrapperParent = wrapper.parentElement
-  const containerParent = container.parentElement
-  const isRightAfterWrapper = wrapperParent && containerParent && wrapperParent === containerParent && 
-    container.nodeType === Node.TEXT_NODE && 
-    Array.from(wrapperParent.childNodes).indexOf(wrapper) + 1 === Array.from(wrapperParent.childNodes).indexOf(container as ChildNode)
-  
-  if (isAfterAsset || isRightAfterWrapper) {
+  const blockStartRange = document.createRange()
+  blockStartRange.selectNodeContents(wrapper)
+  blockStartRange.collapse(true)
+  if ((wrapper === container || wrapper.contains(container)) && range.compareBoundaryPoints(Range.START_TO_START, blockStartRange) <= 0) {
     e.preventDefault()
     const newP = document.createElement('p')
     newP.className = 'editor-block'
     newP.setAttribute('data-id', genId())
-    const br = document.createElement('br')
-    newP.appendChild(br)
-    
+    newP.appendChild(document.createElement('br'))
+    if (wrapperParent) wrapperParent.insertBefore(newP, wrapper)
+    const newR = document.createRange()
+    newR.setStart(newP, 0)
+    newR.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(newR)
+    handleInput()
+    return
+  }
+  if (isAfterAsset || (wrapperParent && container.parentElement && wrapperParent === container.parentElement && container.nodeType === Node.TEXT_NODE && Array.from(wrapperParent.childNodes).indexOf(wrapper) + 1 === Array.from(wrapperParent.childNodes).indexOf(container as ChildNode))) {
+    e.preventDefault()
+    const newP = document.createElement('p')
+    newP.className = 'editor-block'
+    newP.setAttribute('data-id', genId())
+    newP.appendChild(document.createElement('br'))
     if (wrapperParent) {
-      if (wrapper.nextSibling) {
-        wrapperParent.insertBefore(newP, wrapper.nextSibling)
-      } else {
-        wrapperParent.appendChild(newP)
-      }
+      if (wrapper.nextSibling) wrapperParent.insertBefore(newP, wrapper.nextSibling)
+      else wrapperParent.appendChild(newP)
     }
-    
     const newRange = document.createRange()
     newRange.setStart(newP, 0)
     newRange.collapse(true)
@@ -672,8 +751,6 @@ function handleEnterKey(e: KeyboardEvent) {
 function handleKeyDown(e: KeyboardEvent) {
   const target = e.target as HTMLElement
   const isInsideCode = target.classList.contains('code-editor') || target.closest('.code-editor')
-  
-  // 处理代码块内的全选 (Ctrl+A)
   if (isInsideCode && e.ctrlKey && e.key === 'a') {
     e.preventDefault()
     const editor = target.classList.contains('code-editor') ? target : target.closest('.code-editor') as HTMLElement
@@ -686,22 +763,17 @@ function handleKeyDown(e: KeyboardEvent) {
     }
     return
   }
-
   if (e.key === 'ArrowDown') {
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0 || !editorRef.value) return
     const range = selection.getRangeAt(0)
     const container = range.commonAncestorContainer
-    
     const foldContent = container instanceof HTMLElement ? container.closest('.fold-content') : container.parentElement?.closest('.fold-content')
     if (foldContent) {
       const lastRange = document.createRange()
       lastRange.selectNodeContents(foldContent)
       lastRange.collapse(false)
-      
-      const isAtEnd = range.compareBoundaryPoints(Range.END_TO_END, lastRange) >= 0
-      
-      if (isAtEnd) {
+      if (range.compareBoundaryPoints(Range.END_TO_END, lastRange) >= 0) {
         const foldBlock = foldContent.closest('.fold-block') as HTMLElement | null
         if (foldBlock) {
           e.preventDefault()
@@ -731,108 +803,223 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
+// --- Internal Tree Helpers ---
+
+function findNodeById(nodes: EditorNode[], id: string, type: 'image' | 'file'): EditorNode | null {
+  for (const n of nodes) {
+    if (n.type === type && (n.id === id || (n as any).id === id)) return n
+    if ('children' in n && Array.isArray(n.children)) {
+      const found = findNodeById(n.children, id, type)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function updateNodeInTree(nodes: EditorNode[], id: string, type: 'image' | 'file', updates: any): EditorNode[] {
+  return nodes.map(n => {
+    if (n.type === type && (n.id === id || (n as any).id === id)) return { ...n, ...updates } as EditorNode
+    if ('children' in n && Array.isArray(n.children)) return { ...n, children: updateNodeInTree(n.children, id, type, updates) } as EditorNode
+    return n
+  })
+}
+
+function updateTaskItemCheckedInTree(nodes: EditorNode[], taskItemId: string, checked: boolean): EditorNode[] {
+  return nodes.map(n => {
+    if (n.type === 'taskItem' && (n.id === taskItemId || (n as any).id === taskItemId)) return { ...n, checked } as EditorNode
+    if ('children' in n && Array.isArray(n.children)) return { ...n, children: updateTaskItemCheckedInTree(n.children, taskItemId, checked) } as EditorNode
+    return n
+  })
+}
+
+// --- Lifecycle & Watch ---
+
 const defaultNodes = (): EditorNode[] => [{ type: 'p', id: genId(), children: [] }]
 
-async function updateFileIcons() {
-  const el = editorRef.value
-  if (!el) return
-  const icons = el.querySelectorAll<HTMLElement>('.file-icon[data-ext]')
-  const exts = new Set<string>()
-  icons.forEach(node => {
-    const ext = node.getAttribute('data-ext')
-    if (ext) exts.add(ext)
-  })
-  const cache = new Map<string, string>()
-  for (const ext of exts) {
-    try {
-      const b64 = await invoke<string>('get_file_icon', { extension: ext })
-      if (b64) cache.set(ext, b64)
-    } catch (_) {}
-  }
-  icons.forEach(node => {
-    const ext = node.getAttribute('data-ext')
-    const img = node.querySelector<HTMLImageElement>('.file-icon-img')
-    if (!ext || !img) return
-    const dataUrl = cache.get(ext)
-    if (dataUrl) {
-      img.src = `data:image/png;base64,${dataUrl}`
-      img.style.display = ''
-    }
-  })
-}
-
-/** 渲染静态插入的 Lucide 图标 */
-function renderStaticIcons() {
-  const el = editorRef.value
-  if (!el) return
-  const placeholders = el.querySelectorAll('.copy-icon-placeholder')
-  placeholders.forEach(p => {
-    p.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
-  })
-}
-
-function updateCodeHighlighting() {
-  const el = editorRef.value
-  if (!el) return
-  const codeEditors = el.querySelectorAll<HTMLElement>('.code-editor')
-  codeEditors.forEach((editor) => {
-    const wrapper = editor.closest('.code-block-wrapper') as HTMLElement | null
-    const lang = wrapper?.getAttribute('data-language') || 'text'
-    if (!editor.classList.contains('hljs')) {
-      editor.classList.add('hljs')
-    }
-    if (document.activeElement !== editor) {
-      const code = editor.innerText
-      if (code.trim()) {
-        try {
-          const highlighted = hljs.highlight(code, { language: lang }).value
-          editor.innerHTML = highlighted
-        } catch (e) {
-          console.error('Highlight error:', e)
-        }
-      } else {
-        editor.innerHTML = ''
-      }
-    }
-  })
-}
-
 onMounted(() => {
-  if (!editorRef.value) return
-  const nodes = Array.isArray(props.modelValue) && props.modelValue.length > 0 ? props.modelValue : defaultNodes()
-  editorRef.value.innerHTML = nodesToHtml(nodes)
-  nextTick(() => {
-    updateFileIcons()
-    updateCodeHighlighting()
-    renderStaticIcons()
-  })
+  if (editorRef.value) {
+    const nodes = Array.isArray(props.modelValue) && props.modelValue.length > 0 ? props.modelValue : defaultNodes()
+    editorRef.value.innerHTML = nodesToHtml(nodes)
+    nextTick(() => postRender())
+  }
+  document.addEventListener('selectionchange', selectionChangeHandler)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('selectionchange', selectionChangeHandler)
 })
 
 watch(() => props.modelValue, (newVal) => {
   if (!isInternalUpdate.value && editorRef.value) {
     const nodes = Array.isArray(newVal) && newVal.length > 0 ? newVal : defaultNodes()
     editorRef.value.innerHTML = nodesToHtml(nodes)
-    nextTick(() => {
-      updateFileIcons()
-      updateCodeHighlighting()
-      renderStaticIcons()
-    })
+    nextTick(() => postRender())
   }
 }, { deep: true })
 
-let savedRange: Range | null = null
+// --- State ---
 
+const lastCursorBlockIndex = ref(-1)
+const selectedImageId = ref<string | null>(null)
+const selectedImageRect = ref({ top: 0, left: 0 })
+const selectedFileId = ref<string | null>(null)
+const selectedFileRect = ref({ top: 0, left: 0 })
+const IMAGE_TOOLBAR_APPROX_HEIGHT = 44
+const IMAGE_TOOLBAR_APPROX_WIDTH = 220
+const FILE_TOOLBAR_APPROX_HEIGHT = 44
+const FILE_TOOLBAR_APPROX_WIDTH = 180
+const IMAGE_TOOLBAR_PADDING = 8
+
+const selectedImageNode = computed(() => selectedImageId.value ? findNodeById(props.modelValue, selectedImageId.value, 'image') as any : null)
+const selectedFileNode = computed(() => selectedFileId.value ? findNodeById(props.modelValue, selectedFileId.value, 'file') as any : null)
+
+// --- Interaction Logic ---
+
+function selectionChangeHandler() {
+  if (!editorRef.value) return
+  const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return
+  const anchor = sel.anchorNode; if (!anchor || !editorRef.value.contains(anchor)) return
+  let container: any = anchor; while (container && container.parentNode !== editorRef.value) container = container.parentNode
+  if (container) {
+    const kids = editorRef.value.childNodes; for (let i = 0; i < kids.length; i++) if (kids[i] === container) lastCursorBlockIndex.value = i
+  }
+}
+
+function onEditorClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  
+  const foldCopy = target.closest('.fold-copy-btn') as HTMLElement | null
+  if (foldCopy) {
+    e.preventDefault()
+    const editor = foldCopy.closest('.code-block-wrapper')?.querySelector('.code-editor') as HTMLElement | null
+    if (editor) navigator.clipboard.writeText(editor.innerText).then(() => ElMessage.success(t('editor.copySuccess')))
+    return
+  }
+  
+  const foldInsert = target.closest('.fold-insert-btn') as HTMLElement | null
+  if (foldInsert) {
+    e.preventDefault()
+    const block = foldInsert.closest('.fold-block, .code-block-wrapper') as HTMLElement | null
+    if (block && block.parentElement) {
+      const newP = document.createElement('p'); newP.className = 'editor-block'; newP.setAttribute('data-id', genId()); newP.appendChild(document.createElement('br'))
+      if (block.nextSibling) block.parentElement.insertBefore(newP, block.nextSibling)
+      else block.parentElement.appendChild(newP)
+      const sel = window.getSelection()
+      if (sel) {
+        const newRange = document.createRange(); newRange.setStart(newP, 0); newRange.collapse(true); sel.removeAllRanges(); sel.addRange(newRange)
+      }
+      handleInput()
+    }
+    return
+  }
+  
+  const foldToggle = target.closest('.fold-toggle-btn')
+  if (foldToggle) {
+    e.preventDefault()
+    const id = foldToggle.closest('.fold-block')?.getAttribute('data-id')
+    if (id && Array.isArray(props.modelValue)) {
+      const toggleFoldInTree = (nodes: EditorNode[], targetId: string): EditorNode[] => nodes.map(n => {
+        if (n.type === 'fold' && n.id === targetId) return { ...n, folded: !n.folded }
+        if ('children' in n && Array.isArray(n.children)) return { ...n, children: toggleFoldInTree(n.children, targetId) }
+        return n
+      })
+      emit('update:modelValue', toggleFoldInTree(props.modelValue, id))
+    }
+    return
+  }
+  
+  const codeCard = target.closest('.code-card') as HTMLElement | null
+  if (codeCard) {
+    const editor = codeCard.querySelector('.code-editor') as HTMLElement | null
+    if (editor && target !== editor) editor.focus()
+    selectedImageId.value = selectedFileId.value = null
+    return
+  }
+  
+  const foldBlockStructure = target.closest('.fold-block') as HTMLElement | null
+  if (foldBlockStructure && !target.closest('.fold-content')) {
+    (foldBlockStructure.querySelector('.fold-content') as HTMLElement | null)?.focus()
+    return
+  }
+  
+  const taskCheckbox = target.closest('.task-item-checkbox') as HTMLInputElement | null
+  if (taskCheckbox) {
+    e.preventDefault()
+    const id = taskCheckbox.closest('li.task-item')?.getAttribute('data-id')
+    if (id && Array.isArray(props.modelValue)) emit('update:modelValue', updateTaskItemCheckedInTree(props.modelValue, id, !taskCheckbox.checked))
+    return
+  }
+  
+  if (target.closest('.image-toolbar-root') || target.closest('.file-toolbar-root')) return
+  
+  const img = target.closest('img.image-block') as HTMLElement | null || target.closest('.image-block-wrapper')?.querySelector('img.image-block') as HTMLElement | null
+  if (img) {
+    const id = img.getAttribute('data-id')
+    if (id) {
+      selectedImageId.value = id
+      const rect = img.getBoundingClientRect()
+      const top = rect.top - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0 ? rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING : rect.top + window.scrollY - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+      let left = rect.left + rect.width / 2 - IMAGE_TOOLBAR_APPROX_WIDTH / 2 + window.scrollX
+      left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - IMAGE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+      selectedImageRect.value = { top, left }
+    }
+    selectedFileId.value = null
+    return
+  }
+  
+  const fileWrapper = target.closest('.file-block-wrapper') as HTMLElement | null
+  if (fileWrapper) {
+    const id = fileWrapper.getAttribute('data-id')
+    if (id) {
+      selectedFileId.value = id
+      const block = fileWrapper.querySelector('.file-block') as HTMLElement | null || fileWrapper
+      const rect = block.getBoundingClientRect()
+      const top = rect.top - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0 ? rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING : rect.top + window.scrollY - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+      let left = rect.left + rect.width / 2 - FILE_TOOLBAR_APPROX_WIDTH / 2 + window.scrollX
+      left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - FILE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+      selectedFileRect.value = { top, left }
+    }
+    selectedImageId.value = null
+    return
+  }
+  
+  selectedImageId.value = selectedFileId.value = null
+}
+
+function onEditorContextMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.image-toolbar-root')) return
+  const img = target.closest('img.image-block') || target.closest('.image-block-wrapper')?.querySelector('img.image-block')
+  if (img) {
+    const assetPath = img.getAttribute('data-asset-path'); const id = img.getAttribute('data-id')
+    if (assetPath) { e.preventDefault(); emit('contextmenu', { type: 'image', assetPath, id: id || '', clientX: e.clientX, clientY: e.clientY }) }
+    return
+  }
+  const fileWrapper = target.closest('.file-block-wrapper')
+  if (fileWrapper) {
+    const assetPath = fileWrapper.getAttribute('data-asset-path'); const id = fileWrapper.getAttribute('data-id')
+    if (assetPath) { e.preventDefault(); emit('contextmenu', { type: 'file', assetPath, id: id || '', clientX: e.clientX, clientY: e.clientY }) }
+  }
+}
+
+function onEditorDblClick(e: MouseEvent) {
+  const img = (e.target as HTMLElement).closest('img.image-block') as HTMLImageElement | null
+  if (img) { const assetPath = img.getAttribute('data-asset-path'); const id = img.getAttribute('data-id'); if (assetPath && id) emit('open-asset', { type: 'image', assetPath, id }) }
+}
+
+function updateImageNode(updates: any) { if (selectedImageId.value && Array.isArray(props.modelValue)) emit('update:modelValue', updateNodeInTree(props.modelValue, selectedImageId.value, 'image', updates)) }
+function updateFileNode(updates: any) { if (selectedFileId.value && Array.isArray(props.modelValue)) emit('update:modelValue', updateNodeInTree(props.modelValue, selectedFileId.value, 'file', updates)) }
+
+// --- Commands ---
+
+let savedRange: Range | null = null
 const saveSelection = () => {
   const sel = window.getSelection()
   if (!editorRef.value || !sel || sel.rangeCount === 0) return
   const range = sel.getRangeAt(0)
-  if (editorRef.value.contains(range.commonAncestorContainer)) {
-    savedRange = range.cloneRange()
-  } else {
-    savedRange = null
-  }
+  if (editorRef.value.contains(range.commonAncestorContainer)) savedRange = range.cloneRange()
+  else savedRange = null
 }
-
 const restoreSelection = () => {
   if (!savedRange || !editorRef.value) return
   const sel = window.getSelection()
@@ -843,592 +1030,100 @@ const restoreSelection = () => {
 
 const execCommand = (command: string, value?: string) => {
   restoreSelection()
-  if (command === 'formatBlock' && value) {
-    document.execCommand('formatBlock', false, value)
-  } else if (command === 'justifyLeft' || command === 'justifyCenter' || command === 'justifyRight') {
-    document.execCommand(command, false)
-  } else if (command === 'undo') {
-    document.execCommand('undo', false)
-  } else if (command === 'redo') {
-    document.execCommand('redo', false)
-  } else {
-    document.execCommand(command, false, value)
-  }
+  if (command === 'formatBlock' && value) document.execCommand('formatBlock', false, value)
+  else if (['justifyLeft', 'justifyCenter', 'justifyRight', 'undo', 'redo'].includes(command)) document.execCommand(command, false)
+  else document.execCommand(command, false, value)
   handleInput()
 }
 
-function findNodeById(nodes: EditorNode[], id: string, type: 'image' | 'file'): EditorNode | null {
-  for (const n of nodes) {
-    if (n.type === type && (n.id === id || (n as { id?: string }).id === id)) {
-      return n
-    }
-    if ('children' in n && Array.isArray(n.children)) {
-      const found = findNodeById(n.children, id, type)
-      if (found) return found
-    }
-  }
-  return null
+/** 检查元素是否为空段落 */
+function isEmptyP(el: Node | null): boolean {
+  return el instanceof HTMLElement && (el.tagName.toLowerCase() === 'p' || el.tagName.startsWith('H')) && (el.innerHTML === '<br>' || el.innerText.trim() === '')
 }
-
-const selectedImageNode = computed(() => {
-  if (!selectedImageId.value || !Array.isArray(props.modelValue)) return null
-  return findNodeById(props.modelValue, selectedImageId.value, 'image') as (EditorNode & { type: 'image' }) | null
-})
-
-const selectedFileNode = computed(() => {
-  if (!selectedFileId.value || !Array.isArray(props.modelValue)) return null
-  return findNodeById(props.modelValue, selectedFileId.value, 'file') as (EditorNode & { type: 'file' }) | null
-})
-
-function findTaskItemById(nodes: EditorNode[], id: string): (EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }) | null {
-  for (const n of nodes) {
-    if (n.type === 'taskItem' && (n.id === id || (n as { id?: string }).id === id))
-      return n as EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }
-    if ('children' in n && Array.isArray(n.children)) {
-      const found = findTaskItemById(n.children, id)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-function updateTaskItemCheckedInTree(nodes: EditorNode[], taskItemId: string, checked: boolean): EditorNode[] {
-  return nodes.map((n) => {
-    if (n.type === 'taskItem' && ((n as { id?: string }).id === taskItemId)) {
-      return { ...n, checked } as EditorNode
-    }
-    if ('children' in n && Array.isArray(n.children)) {
-      return { ...n, children: updateTaskItemCheckedInTree(n.children, taskItemId, checked) } as EditorNode
-    }
-    return n
-  })
-}
-
-function onEditorClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  const foldCopy = (target.classList.contains('fold-copy-btn') ? target : target.closest('.fold-copy-btn')) as HTMLElement | null
-  if (foldCopy) {
-    e.preventDefault()
-    const block = foldCopy.closest('.code-block-wrapper') as HTMLElement | null
-    const editor = block?.querySelector('.code-editor') as HTMLElement | null
-    if (editor) {
-      const code = editor.innerText
-      navigator.clipboard.writeText(code).then(() => {
-        ElMessage.success(t('editor.copySuccess'))
-      })
-    }
-    return
-  }
-  const foldInsert = (target.classList.contains('fold-insert-btn') ? target : target.closest('.fold-insert-btn')) as HTMLElement | null
-  if (foldInsert) {
-    e.preventDefault()
-    const block = foldInsert.closest('.fold-block, .code-block-wrapper') as HTMLElement | null
-    if (!block) return
-    const wrapperParent = block.parentElement
-    if (!wrapperParent) return
-    const newP = document.createElement('p')
-    newP.className = 'editor-block'
-    newP.setAttribute('data-id', genId())
-    const br = document.createElement('br')
-    newP.appendChild(br)
-    if (block.nextSibling) {
-      wrapperParent.insertBefore(newP, block.nextSibling)
-    } else {
-      wrapperParent.appendChild(newP)
-    }
-    const sel = window.getSelection()
-    if (sel) {
-      const newRange = document.createRange()
-      newRange.setStart(newP, 0)
-      newRange.collapse(true)
-      sel.removeAllRanges()
-      sel.addRange(newRange)
-    }
-    handleInput()
-    return
-  }
-  const foldToggle = target.classList.contains('fold-toggle-btn') ? target : target.closest('.fold-toggle-btn')
-  if (foldToggle) {
-    e.preventDefault()
-    const foldBlock = foldToggle.closest('.fold-block') as HTMLElement | null
-    if (!foldBlock) return
-    const id = foldBlock.getAttribute('data-id')
-    if (!id || !Array.isArray(props.modelValue)) return
-    
-    function toggleFoldInTree(nodes: EditorNode[], targetId: string): EditorNode[] {
-      return nodes.map(n => {
-        if (n.type === 'fold' && n.id === targetId) {
-          return { ...n, folded: !n.folded }
-        }
-        if ('children' in n && Array.isArray(n.children)) {
-          return { ...n, children: toggleFoldInTree(n.children, targetId) }
-        }
-        return n
-      })
-    }
-    
-    const updated = toggleFoldInTree(props.modelValue, id)
-    emit('update:modelValue', updated)
-    isInternalUpdate.value = true
-    if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(updated)
-    nextTick(() => {
-      updateFileIcons()
-      updateCodeHighlighting()
-    })
-    setTimeout(() => { isInternalUpdate.value = false }, 0)
-    return
-  }
-  const codeCard = target.closest('.code-card') as HTMLElement | null
-  if (codeCard) {
-    const editor = codeCard.querySelector('.code-editor') as HTMLElement | null
-    if (editor && target !== editor) {
-      editor.focus()
-    }
-    selectedImageId.value = null
-    selectedFileId.value = null
-    return
-  }
-  const foldBlockStructure = target.closest('.fold-block') as HTMLElement | null
-  if (foldBlockStructure && !target.closest('.fold-content')) {
-    const content = foldBlockStructure.querySelector('.fold-content') as HTMLElement | null
-    if (content) {
-      content.focus()
-    }
-    return
-  }
-  const taskCheckbox = target.classList.contains('task-item-checkbox') ? target : target.closest('.task-item-checkbox')
-  if (taskCheckbox) {
-    e.preventDefault()
-    const li = (taskCheckbox as HTMLElement).closest('li.task-item') as HTMLElement | null
-    if (!li || !Array.isArray(props.modelValue)) return
-    const taskItemId = li.getAttribute('data-id') ?? null
-    if (!taskItemId) return
-    const current = findTaskItemById(props.modelValue, taskItemId)
-    if (!current) return
-    const nextChecked = !current.checked
-    const updated = updateTaskItemCheckedInTree(props.modelValue, taskItemId, nextChecked)
-    emit('update:modelValue', updated)
-    isInternalUpdate.value = true
-    if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(updated)
-    nextTick(() => {
-      updateFileIcons()
-      updateCodeHighlighting()
-    })
-    setTimeout(() => { isInternalUpdate.value = false }, 0)
-    return
-  }
-  if (target.closest('.image-toolbar-root') || target.closest('.file-toolbar-root')) return
-  
-  // 处理图片点击（包括折叠块内的图片）
-  const imgElement = target.tagName === 'IMG' && target.classList.contains('image-block') 
-    ? target as HTMLElement 
-    : target.closest('img.image-block') as HTMLElement | null
-  const imageWrapper = target.closest('.image-block-wrapper') as HTMLElement | null
-  
-  if (imgElement || imageWrapper) {
-    const img = imgElement ?? imageWrapper?.querySelector('img.image-block') as HTMLElement | null
-    if (img) {
-      const id = img.getAttribute('data-id') ?? null
-      if (id) {
-        selectedImageId.value = id
-        const rect = img.getBoundingClientRect()
-        let top: number
-        if (rect.top - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
-          top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
-        } else {
-          top = rect.top + window.scrollY - IMAGE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
-        }
-        let left = rect.left + rect.width / 2 - IMAGE_TOOLBAR_APPROX_WIDTH / 2
-        left += window.scrollX
-        left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - IMAGE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
-        selectedImageRect.value = { top, left }
-      }
-    }
-    selectedFileId.value = null
-    return
-  }
-  
-  // 处理文件点击（包括折叠块内的文件）
-  const fileWrapper = target.closest('.file-block-wrapper') as HTMLElement | null
-  const fileCard = target.closest('.file-card') as HTMLElement | null
-  const fileBlock = target.closest('.file-block') as HTMLElement | null
-  
-  if (fileWrapper || fileCard || fileBlock) {
-    const wrapper = fileWrapper ?? (fileCard || fileBlock)?.closest('.file-block-wrapper') as HTMLElement | null
-    if (wrapper) {
-      const id = wrapper.getAttribute('data-id') ?? null
-      if (id) {
-        selectedFileId.value = id
-        const block = wrapper.querySelector('.file-block') as HTMLElement | null
-        const rect = (block ?? wrapper)?.getBoundingClientRect()
-        if (rect) {
-          let top: number
-          if (rect.top - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0) {
-            top = rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING
-          } else {
-            top = rect.top + window.scrollY - FILE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
-          }
-          let left = rect.left + rect.width / 2 - FILE_TOOLBAR_APPROX_WIDTH / 2
-          left += window.scrollX
-          left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - FILE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
-          selectedFileRect.value = { top, left }
-        }
-      }
-    }
-    selectedImageId.value = null
-    return
-  }
-  selectedImageId.value = null
-  selectedFileId.value = null
-}
-
-function onEditorContextMenu(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (target.closest('.image-toolbar-root')) return
-  
-  // 处理图片右键（包括折叠块内的图片）
-  const imgElement = target.tagName === 'IMG' && target.classList.contains('image-block') 
-    ? target as HTMLElement 
-    : target.closest('img.image-block') as HTMLElement | null
-  const imageWrapper = target.closest('.image-block-wrapper') as HTMLElement | null
-  
-  if (imgElement || imageWrapper) {
-    const img = imgElement ?? imageWrapper?.querySelector('img.image-block') as HTMLElement | null
-    const wrapper = imageWrapper ?? (imgElement?.closest('.image-block-wrapper') as HTMLElement | null)
-    if (img || wrapper) {
-      const el = img ?? wrapper!
-      const assetPath = el.getAttribute('data-asset-path') ?? ''
-      const id = el.getAttribute('data-id') ?? ''
-      if (assetPath) {
-        e.preventDefault()
-        emit('contextmenu', { type: 'image', assetPath, id, clientX: e.clientX, clientY: e.clientY })
-      }
-    }
-    return
-  }
-  
-  // 处理文件右键（包括折叠块内的文件）
-  const fileWrapper = target.closest('.file-block-wrapper') as HTMLElement | null
-  const fileCard = target.closest('.file-card') as HTMLElement | null
-  const fileBlock = target.closest('.file-block') as HTMLElement | null
-  
-  if (fileWrapper || fileCard || fileBlock) {
-    const wrapper = fileWrapper ?? (fileCard || fileBlock)?.closest('.file-block-wrapper') as HTMLElement | null
-    if (wrapper) {
-      const assetPath = wrapper.getAttribute('data-asset-path') ?? ''
-      const id = wrapper.getAttribute('data-id') ?? ''
-      if (assetPath) {
-        e.preventDefault()
-        emit('contextmenu', { type: 'file', assetPath, id, clientX: e.clientX, clientY: e.clientY })
-      }
-    }
-  }
-}
-
-function updateNodeInTree(nodes: EditorNode[], id: string, type: 'image' | 'file', updates: { widthPercent?: number; align?: 'left' | 'center' | 'right' }): EditorNode[] {
-  return nodes.map(node => {
-    if (node.type === type && (node.id === id || (node as { id?: string }).id === id)) {
-      return { ...node, ...updates } as EditorNode
-    }
-    if ('children' in node && Array.isArray(node.children)) {
-      return { ...node, children: updateNodeInTree(node.children, id, type, updates) } as EditorNode
-    }
-    return node
-  })
-}
-
-function updateImageNode(updates: { widthPercent?: number; align?: 'left' | 'center' | 'right' }) {
-  if (!selectedImageId.value || !Array.isArray(props.modelValue)) return
-  const next = updateNodeInTree(props.modelValue, selectedImageId.value, 'image', updates)
-  emit('update:modelValue', next)
-  isInternalUpdate.value = true
-  if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(next)
-  nextTick(() => {
-    updateFileIcons()
-    updateCodeHighlighting()
-  })
-  setTimeout(() => { isInternalUpdate.value = false }, 0)
-}
-
-function updateFileNode(updates: { align?: 'left' | 'center' | 'right' }) {
-  if (!selectedFileId.value || !Array.isArray(props.modelValue)) return
-  const next = updateNodeInTree(props.modelValue, selectedFileId.value, 'file', updates)
-  emit('update:modelValue', next)
-  isInternalUpdate.value = true
-  if (editorRef.value) editorRef.value.innerHTML = nodesToHtml(next)
-  nextTick(() => {
-    updateFileIcons()
-    updateCodeHighlighting()
-  })
-  setTimeout(() => { isInternalUpdate.value = false }, 0)
-}
-
-function onEditorDblClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  const imgElement = target.tagName === 'IMG' && target.classList.contains('image-block') 
-    ? target as HTMLElement 
-    : target.closest('img.image-block') as HTMLElement | null
-  const imageWrapper = target.closest('.image-block-wrapper') as HTMLElement | null
-  
-  if (imgElement || imageWrapper) {
-    const img = imgElement ?? imageWrapper?.querySelector('img.image-block') as HTMLImageElement | null
-    if (img) {
-      const assetPath = img.getAttribute('data-asset-path') ?? ''
-      const id = img.getAttribute('data-id') ?? ''
-      if (assetPath && id) {
-        emit('open-asset', { type: 'image', assetPath, id })
-      }
-    }
-  }
-}
-
-function computeCursorBlockIndex(): number {
-  const sel = window.getSelection()
-  const editor = editorRef.value
-  if (!sel || sel.rangeCount === 0 || !editor) return -1
-  
-  const anchorNode = sel.anchorNode
-  if (!anchorNode) return -1
-
-  // 寻找所在的 block-container
-  let container: HTMLElement | null = null
-  let curr: Node | null = anchorNode
-  while (curr && curr !== editor) {
-    if (curr instanceof HTMLElement && curr.getAttribute('contenteditable') === 'true') {
-      container = curr
-      break
-    }
-    curr = curr.parentNode
-  }
-  if (!container) container = editor
-
-  let node: Node | null = anchorNode
-  while (node && node.parentNode !== container) node = node.parentNode
-  if (!node) return -1
-  
-  const children = container.childNodes
-  for (let i = 0; i < children.length; i++) {
-    if (children[i] === node) return i
-  }
-  return -1
-}
-
-function getCursorBlockIndex(): number {
-  const current = computeCursorBlockIndex()
-  if (current >= 0) {
-    lastCursorBlockIndex.value = current
-    return current
-  }
-  return lastCursorBlockIndex.value
-}
-
-function selectionChangeHandler() {
-  if (!editorRef.value) return
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) return
-  const anchor = sel.anchorNode
-  if (!anchor || !editorRef.value.contains(anchor)) return
-  const idx = computeCursorBlockIndex()
-  if (idx >= 0) lastCursorBlockIndex.value = idx
-}
-onMounted(() => {
-  document.addEventListener('selectionchange', selectionChangeHandler)
-})
-onUnmounted(() => {
-  document.removeEventListener('selectionchange', selectionChangeHandler)
-})
 
 function insertTaskListAtSelection() {
-  restoreSelection()
-  const info = getInsertionContainer()
-  if (!info.container) return
-  const taskNode: EditorNode = {
-    type: 'taskList',
-    id: genId(),
-    children: [{ type: 'taskItem', id: genId(), checked: false, children: [] }]
+  restoreSelection(); const info = getInsertionContainer(); if (!info.container) return
+  const currentBlock = info.container.childNodes[info.index] as HTMLElement
+  let children: EditorNode[] = []
+  if (currentBlock && (currentBlock.tagName.toLowerCase() === 'p' || currentBlock.tagName.startsWith('H'))) {
+    const tempDiv = document.createElement('div'); tempDiv.innerHTML = currentBlock.innerHTML
+    children = domToNodesFromContainer(tempDiv)
+    if (children.length === 1 && children[0].type === 'text' && children[0].value === '') children = []
   }
-  const html = nodeToHtml(taskNode)
-  const wrap = document.createElement('div')
-  wrap.innerHTML = html
-  const ul = wrap.firstElementChild
-  if (!ul) return
-  
-  if (info.index >= 0 && info.index < info.container.childNodes.length) {
-    const next = info.container.childNodes[info.index + 1] || null
-    info.container.insertBefore(ul, next)
-  } else {
-    info.container.appendChild(ul)
-  }
+  const taskNode: EditorNode = { type: 'taskList', id: genId(), children: [{ type: 'taskItem', id: genId(), checked: false, children }] }
+  const wrap = document.createElement('div'); wrap.innerHTML = nodesToHtml([taskNode])
+  const el = wrap.firstElementChild; if (!el) return
+  if (currentBlock) info.container.replaceChild(el, currentBlock)
+  else info.container.appendChild(el)
   handleInput()
-}
-
-function getFoldDepth(node: Node | null): number {
-  let depth = 0
-  let curr = node
-  while (curr && curr !== editorRef.value) {
-    if (curr instanceof HTMLElement && curr.classList.contains('fold-block')) {
-      depth++
-    }
-    curr = curr.parentNode
-  }
-  return depth
+  nextTick(() => postRender())
 }
 
 function insertCodeBlock() {
-  restoreSelection()
-  const info = getInsertionContainer()
-  if (!info.container) return
-  const codeNode: EditorNode = {
-    type: 'code',
-    id: genId(),
-    content: '',
-    language: 'javascript'
-  }
-  const html = nodeToHtml(codeNode)
-  const wrap = document.createElement('div')
-  wrap.innerHTML = html
-  const el = wrap.firstElementChild
-  if (!el) return
-  
-  if (info.index >= 0 && info.index < info.container.childNodes.length) {
-    const next = info.container.childNodes[info.index + 1] || null
-    info.container.insertBefore(el, next)
-  } else {
-    info.container.appendChild(el)
-  }
-  handleInput()
+  insertNodesAtSelection({ type: 'code', id: genId(), content: '', language: 'javascript' })
 }
 
 function insertFoldBlock() {
-  restoreSelection()
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0 || !editorRef.value) return
-  
-  const depth = getFoldDepth(sel.anchorNode)
-  if (depth >= 3) {
-    return 
-  }
-
-  const info = getInsertionContainer()
-  if (!info.container) return
-  const foldNode: EditorNode = {
-    type: 'fold',
-    id: genId(),
-    folded: false,
-    children: [{ type: 'p', id: genId(), children: [] }]
-  }
-  const html = nodeToHtml(foldNode)
-  const wrap = document.createElement('div')
-  wrap.innerHTML = html
-  const el = wrap.firstElementChild
-  if (!el) return
-  
-  if (info.index >= 0 && info.index < info.container.childNodes.length) {
-    const next = info.container.childNodes[info.index + 1] || null
-    info.container.insertBefore(el, next)
-  } else {
-    info.container.appendChild(el)
-  }
-  handleInput()
+  const sel = window.getSelection(); if (!sel || sel.rangeCount === 0 || !editorRef.value) return
+  let depth = 0, curr: any = sel.anchorNode; while (curr && curr !== editorRef.value) { if (curr.classList?.contains('fold-block')) depth++; curr = curr.parentNode }
+  if (depth >= 3) return
+  insertNodesAtSelection({ type: 'fold', id: genId(), folded: false, children: [{ type: 'p', id: genId(), children: [] }] })
 }
 
 function insertNodesAtSelection(newNodes: EditorNode | EditorNode[]) {
-  restoreSelection()
-  const info = getInsertionContainer()
-  if (!info.container) return
-
+  restoreSelection(); const info = getInsertionContainer(); if (!info.container) return
   const nodesArray = Array.isArray(newNodes) ? newNodes : [newNodes]
-  const frag = document.createDocumentFragment()
-  for (const node of nodesArray) {
-    const html = nodeToHtml(node)
-    const wrap = document.createElement('div')
-    wrap.innerHTML = html
-    const el = wrap.firstElementChild
-    if (el) frag.appendChild(el)
-  }
-
-  if (!frag.childNodes.length) return
-
-  if (info.index >= 0 && info.index < info.container.childNodes.length) {
-    const next = info.container.childNodes[info.index + 1] || null
-    info.container.insertBefore(frag, next)
+  const frag = document.createDocumentFragment(); nodesArray.forEach(n => {
+    const wrap = document.createElement('div'); wrap.innerHTML = nodesToHtml([n]); if (wrap.firstElementChild) frag.appendChild(wrap.firstElementChild)
+  })
+  const currentBlock = info.container.childNodes[info.index]
+  if (isEmptyP(currentBlock)) {
+    info.container.replaceChild(frag, currentBlock)
   } else {
-    info.container.appendChild(frag)
+    if (info.index >= 0 && info.index < info.container.childNodes.length) info.container.insertBefore(frag, info.container.childNodes[info.index + 1] || null)
+    else info.container.appendChild(frag)
   }
   handleInput()
+  nextTick(() => postRender())
 }
 
-defineExpose({
-  execCommand,
-  handleInput,
-  saveSelection,
-  restoreSelection,
-  getCursorBlockIndex,
-  insertTaskListAtSelection,
-  insertPlainText,
-  insertCodeBlock,
-  insertFoldBlock,
-  insertNodesAtSelection
+
+defineExpose({ 
+  execCommand, 
+  handleInput, 
+  saveSelection, 
+  restoreSelection, 
+  getCursorBlockIndex: () => lastCursorBlockIndex.value, 
+  insertTaskListAtSelection, 
+  insertPlainText, 
+  insertCodeBlock, 
+  insertFoldBlock, 
+  insertNodesAtSelection 
 })
 </script>
 
 <template>
   <div class="advanced-editor-container">
-    <div
-      ref="editorRef"
-      class="advanced-editor"
-      contenteditable="true"
-      @input="handleInput"
-      @paste="handlePaste"
-      @keydown.enter.capture="handleEnterKey"
-      @beforeinput="handleBeforeInput"
-      @click="onEditorClick"
-      @dblclick="onEditorDblClick"
-      @contextmenu="onEditorContextMenu"
-      @keydown="handleKeyDown"
-      @focusout="updateCodeHighlighting"
-    ></div>
+    <div ref="editorRef" class="advanced-editor" contenteditable="true" @input="handleInput" @paste="handlePaste"
+      @keydown.enter.capture="handleEnterKey" @beforeinput="handleBeforeInput" @click="onEditorClick"
+      @dblclick="onEditorDblClick" @contextmenu="onEditorContextMenu" @keydown="handleKeyDown"
+      @focusout="updateCodeHighlighting"></div>
     <Teleport to="body">
-      <div
-        v-if="selectedImageId && selectedImageNode"
-        ref="imageToolbarRef"
-        class="image-toolbar-root image-toolbar"
-        :style="{ top: selectedImageRect.top + 'px', left: selectedImageRect.left + 'px' }"
-      >
+      <div v-if="selectedImageId && selectedImageNode" class="image-toolbar-root image-toolbar"
+        :style="{ top: selectedImageRect.top + 'px', left: selectedImageRect.left + 'px' }">
         <label class="image-toolbar-label">宽度%</label>
-        <input
-          type="number"
-          class="image-toolbar-input"
-          min="10"
-          max="100"
+        <input type="number" class="image-toolbar-input" min="10" max="100"
           :value="selectedImageNode.widthPercent ?? 100"
-          @change="(e) => updateImageNode({ widthPercent: Math.min(100, Math.max(10, Number((e.target as HTMLInputElement).value) || 100)) })"
-        />
-        <button type="button" class="image-toolbar-btn" title="左对齐" @click="updateImageNode({ align: 'left' })">
-          <AlignLeft :size="16" />
-        </button>
-        <button type="button" class="image-toolbar-btn" title="居中" @click="updateImageNode({ align: 'center' })">
-          <AlignCenter :size="16" />
-        </button>
-        <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })">
-          <AlignRight :size="16" />
-        </button>
+          @change="(e) => updateImageNode({ widthPercent: Math.min(100, Math.max(10, Number((e.target as HTMLInputElement).value) || 100)) })" />
+        <button type="button" class="image-toolbar-btn" title="左对齐" @click="updateImageNode({ align: 'left' })"><AlignLeft :size="16" /></button>
+        <button type="button" class="image-toolbar-btn" title="居中" @click="updateImageNode({ align: 'center' })"><AlignCenter :size="16" /></button>
+        <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })"><AlignRight :size="16" /></button>
       </div>
-      <div
-        v-if="selectedFileId && selectedFileNode"
-        ref="fileToolbarRef"
-        class="file-toolbar-root file-toolbar"
-        :style="{ top: selectedFileRect.top + 'px', left: selectedFileRect.left + 'px' }"
-      >
-        <button type="button" class="file-toolbar-btn" title="左对齐" @click="updateFileNode({ align: 'left' })">
-          <AlignLeft :size="16" />
-        </button>
-        <button type="button" class="file-toolbar-btn" title="居中" @click="updateFileNode({ align: 'center' })">
-          <AlignCenter :size="16" />
-        </button>
-        <button type="button" class="file-toolbar-btn" title="右对齐" @click="updateFileNode({ align: 'right' })">
-          <AlignRight :size="16" />
-        </button>
+      <div v-if="selectedFileId && selectedFileNode" class="file-toolbar-root file-toolbar"
+        :style="{ top: selectedFileRect.top + 'px', left: selectedFileRect.left + 'px' }">
+        <button type="button" class="file-toolbar-btn" title="左对齐" @click="updateFileNode({ align: 'left' })"><AlignLeft :size="16" /></button>
+        <button type="button" class="file-toolbar-btn" title="居中" @click="updateFileNode({ align: 'center' })"><AlignCenter :size="16" /></button>
+        <button type="button" class="file-toolbar-btn" title="右对齐" @click="updateFileNode({ align: 'right' })"><AlignRight :size="16" /></button>
       </div>
     </Teleport>
   </div>
@@ -1502,7 +1197,7 @@ defineExpose({
 :deep(.image-block) {
   max-width: 100%;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   margin: 5px;
   cursor: default;
   display: inline-block;
@@ -1627,7 +1322,8 @@ defineExpose({
   padding: 0;
 }
 
-:deep(.fold-line-top), :deep(.fold-line-bottom) {
+:deep(.fold-line-top),
+:deep(.fold-line-bottom) {
   height: 1px;
   background: var(--file-card-border);
   margin: 4px 0;
@@ -1646,7 +1342,9 @@ defineExpose({
   user-select: none;
 }
 
-:deep(.fold-toggle-btn), :deep(.fold-insert-btn), :deep(.fold-copy-btn) {
+:deep(.fold-toggle-btn),
+:deep(.fold-insert-btn),
+:deep(.fold-copy-btn) {
   background: rgba(0, 0, 0, 0.05);
   border: none;
   cursor: pointer;
@@ -1662,15 +1360,21 @@ defineExpose({
   transition: background 0.2s;
 }
 
-:deep(.fold-toggle-btn:hover), :deep(.fold-insert-btn:hover), :deep(.fold-copy-btn:hover) {
+:deep(.fold-toggle-btn:hover),
+:deep(.fold-insert-btn:hover),
+:deep(.fold-copy-btn:hover) {
   background: rgba(0, 0, 0, 0.1);
 }
 
-.dark :deep(.fold-toggle-btn), .dark :deep(.fold-insert-btn), .dark :deep(.fold-copy-btn) {
+.dark :deep(.fold-toggle-btn),
+.dark :deep(.fold-insert-btn),
+.dark :deep(.fold-copy-btn) {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.dark :deep(.fold-toggle-btn:hover), .dark :deep(.fold-insert-btn:hover), .dark :deep(.fold-copy-btn:hover) {
+.dark :deep(.fold-toggle-btn:hover),
+.dark :deep(.fold-insert-btn:hover),
+.dark :deep(.fold-copy-btn:hover) {
   background: rgba(255, 255, 255, 0.15);
 }
 
