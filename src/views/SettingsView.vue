@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { useSettingsStore } from '../store/settings'
-import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import { useI18n } from 'vue-i18n'
-import { ChevronLeft, FolderOpen, Search, Trash2 } from 'lucide-vue-next'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ChevronLeft, FolderOpen, Search, Trash2 } from 'lucide-vue-next'
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { useSettingsStore } from '../store/settings'
 
 const { t } = useI18n()
 const settingsStore = useSettingsStore()
@@ -20,6 +20,7 @@ interface OrphanFolder {
 const orphanTodosVisible = ref(false)
 const orphanTodos = ref<OrphanFolder[]>([])
 const orphanTodosLoading = ref(false)
+const orphanHelpVisible = ref(false)
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -68,7 +69,7 @@ async function deleteAllOrphanTodos() {
         cancelButtonText: t('common.cancel')
       }
     )
-    
+
     for (const folder of orphanTodos.value) {
       try {
         await invoke('delete_todo_folder', {
@@ -79,7 +80,7 @@ async function deleteAllOrphanTodos() {
         console.error(`删除文件夹失败: ${folder.folder_name}`, e)
       }
     }
-    
+
     orphanTodos.value = []
     ElMessage.success(t('settings.orphanTodosDeleteSuccess'))
   } catch {
@@ -143,16 +144,16 @@ const handlePickFolder = async () => {
     if (selected) {
       const oldPath = settingsStore.config.data_path
       const newPath = selected as string
-      
+
       // 只有在路径真正改变时才执行移动
       if (oldPath && oldPath !== newPath) {
         await invoke('move_data', { oldPath, newPath })
       }
-      
+
       // 更新配置并立即保存
       settingsStore.config.data_path = newPath
       await settingsStore.saveConfig()
-      
+
       // 重新加载代办列表以确保路径正确
       const todoStore = (await import('../store/todo')).useTodoStore()
       await todoStore.loadTodos(newPath)
@@ -182,7 +183,8 @@ const handlePickFolder = async () => {
 
       <el-form-item :label="t('settings.theme')">
         <el-radio-group v-model="settingsStore.config.theme" @change="onThemeChange">
-          <el-radio v-for="item in themes" :key="item.value" :label="item.label" :value="item.value">{{ item.label }}</el-radio>
+          <el-radio v-for="item in themes" :key="item.value" :label="item.label" :value="item.value">{{ item.label
+            }}</el-radio>
         </el-radio-group>
       </el-form-item>
 
@@ -211,12 +213,8 @@ const handlePickFolder = async () => {
 
       <el-form-item :label="t('settings.launchAtLogin')">
         <div class="launch-at-login-row">
-          <el-switch
-            v-model="settingsStore.config.launch_at_login"
-            :active-value="true"
-            :inactive-value="false"
-            @change="onLaunchAtLoginChange"
-          />
+          <el-switch v-model="settingsStore.config.launch_at_login" :active-value="true" :inactive-value="false"
+            @change="onLaunchAtLoginChange" />
           <span class="launch-at-login-desc">{{ t('settings.launchAtLoginDesc') }}</span>
         </div>
       </el-form-item>
@@ -232,19 +230,20 @@ const handlePickFolder = async () => {
         </el-input>
       </el-form-item>
 
-      <el-form-item>
-        <el-button type="warning" @click="findOrphanTodos" :loading="orphanTodosLoading">
-          <Search :size="16" style="margin-right: 4px" />
-          {{ t('settings.findOrphanTodos') }}
-        </el-button>
+      <el-form-item :label="t('settings.findOrphanTodos')">
+        <div class="orphan-todos-actions">
+          <el-button @click="findOrphanTodos" :loading="orphanTodosLoading">
+            <Search :size="16" style="margin-right: 4px" />
+            查找
+          </el-button>
+          <el-button class="orphan-help-btn" text @click="orphanHelpVisible = true">
+            ?
+          </el-button>
+        </div>
       </el-form-item>
     </el-form>
 
-    <el-dialog
-      v-model="orphanTodosVisible"
-      :title="t('settings.orphanTodosTitle')"
-      width="600px"
-    >
+    <el-dialog v-model="orphanTodosVisible" :title="t('settings.orphanTodosTitle')" width="600px">
       <div v-if="orphanTodos.length === 0" class="orphan-empty">
         {{ t('settings.orphanTodosEmpty') }}
       </div>
@@ -270,6 +269,14 @@ const handlePickFolder = async () => {
           </div>
         </el-scrollbar>
       </div>
+    </el-dialog>
+    <el-dialog v-model="orphanHelpVisible" title="功能说明" width="500px">
+      <p>
+        “查找未知代办”会扫描当前数据目录下所有代办文件夹，找出那些已经不在代办列表中显示、但仍然存在于磁盘上的“孤立”文件夹。
+      </p>
+      <p style="margin-top: 8px;">
+        你可以通过这个功能查看这些未知代办占用的空间，并在确认不再需要后进行清理，以减少磁盘占用、保持数据目录整洁。
+      </p>
     </el-dialog>
   </div>
 </template>
@@ -385,5 +392,16 @@ const handlePickFolder = async () => {
 
 .dark .orphan-size {
   color: #aaa;
+}
+
+.orphan-todos-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.orphan-help-btn {
+  padding: 0 6px;
+  font-size: 14px;
 }
 </style>
