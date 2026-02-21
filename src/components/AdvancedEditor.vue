@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ElMessage } from 'element-plus';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
-import { AlignCenter, AlignLeft, AlignRight } from 'lucide-vue-next';
+import { AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronUp, Copy, Minus, Plus, Trash2 } from 'lucide-vue-next';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -60,6 +60,21 @@ const formatFileSize = (bytes: number): string => {
 const foldTitleText = computed(() => t('editor.foldTitle'))
 const foldInsertAfterText = computed(() => t('editor.foldInsertAfter'))
 
+/** 代码块可选语言（与 highlight.js 别名一致） */
+const CODE_LANGUAGES = [
+  { label: 'Text', value: 'text' },
+  { label: 'JavaScript', value: 'javascript' },
+  { label: 'TypeScript', value: 'typescript' },
+  { label: 'Python', value: 'python' },
+  { label: 'JSON', value: 'json' },
+  { label: 'HTML', value: 'html' },
+  { label: 'CSS', value: 'css' },
+  { label: 'XML', value: 'xml' },
+  { label: 'Markdown', value: 'markdown' },
+  { label: 'Bash', value: 'bash' },
+  { label: 'SQL', value: 'sql' }
+]
+
 // --- Recursive HTML Renderer ---
 
 const nodeToHtml = (node: EditorNode): string => {
@@ -87,17 +102,14 @@ const nodeToHtml = (node: EditorNode): string => {
 
   if (node.type === 'code') {
     const lang = node.language || 'text'
-    const insertLabel = escapeHtml(foldInsertAfterText.value)
-    const copyLabel = escapeHtml(t('editor.codeCopy'))
-    return `<span class="editor-block code-block-wrapper" data-id="${node.id}" data-language="${escapeHtml(lang)}" style="display: block; margin: 12px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><span class="code-card"><div class="code-header"><span class="code-lang">${escapeHtml(lang)}</span><div class="code-header-btns"><button type="button" class="fold-copy-btn" title="${copyLabel}"><span class="copy-icon-placeholder"></span></button><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div></div><div class="code-editor" contenteditable="true" spellcheck="false">${escapeHtml(node.content)}</div></span></span><br class="asset-trailing-br"></span>`
+    return `<span class="editor-block code-block-wrapper" data-id="${node.id}" data-language="${escapeHtml(lang)}" style="display: block; margin: 12px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><span class="code-card"><div class="code-editor" contenteditable="true" spellcheck="false">${escapeHtml(node.content)}</div></span></span><br class="asset-trailing-br"></span>`
   }
 
   if (node.type === 'fold') {
     const folded = node.folded ?? false
     const title = escapeHtml(foldTitleText.value)
-    const insertLabel = escapeHtml(foldInsertAfterText.value)
     const childrenHtml = (node.children || []).map(nodeToHtml).join('') || '<p class="editor-block"><br></p>'
-    return `<span class="editor-block fold-block" data-id="${node.id}" data-folded="${folded}" style="display: block; margin: 20px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><div class="fold-line-top"></div><div class="fold-header"><button type="button" class="fold-toggle-btn">${folded ? '▶' : '▼'}</button><span class="fold-title">${title}</span><button type="button" class="fold-insert-btn" title="${insertLabel}">＋</button></div><div class="fold-content" contenteditable="true" style="display: ${folded ? 'none' : 'block'};">${childrenHtml}</div><div class="fold-line-bottom"></div></span><br class="asset-trailing-br"></span>`
+    return `<span class="editor-block fold-block" data-id="${node.id}" data-folded="${folded}" style="display: block; margin: 20px 0;"><span contenteditable="false" style="display: inline-block; vertical-align: middle; width: 100%;"><div class="fold-line-top"></div><div class="fold-header"><span class="fold-title">${title}</span></div><div class="fold-content" contenteditable="true" style="display: ${folded ? 'none' : 'block'};">${childrenHtml}</div><div class="fold-line-bottom"></div></span><br class="asset-trailing-br"></span>`
   }
 
   if (node.type === 'strong') return `<strong>${(node.children || []).map(nodeToHtml).join('')}</strong>`
@@ -805,7 +817,7 @@ function handleKeyDown(e: KeyboardEvent) {
 
 // --- Internal Tree Helpers ---
 
-function findNodeById(nodes: EditorNode[], id: string, type: 'image' | 'file'): EditorNode | null {
+function findNodeById(nodes: EditorNode[], id: string, type: 'image' | 'file' | 'code' | 'fold'): EditorNode | null {
   for (const n of nodes) {
     if (n.type === type && (n.id === id || (n as any).id === id)) return n
     if ('children' in n && Array.isArray(n.children)) {
@@ -816,7 +828,17 @@ function findNodeById(nodes: EditorNode[], id: string, type: 'image' | 'file'): 
   return null
 }
 
-function updateNodeInTree(nodes: EditorNode[], id: string, type: 'image' | 'file', updates: any): EditorNode[] {
+/** 从树中移除指定 id 的块（支持根级与折叠内嵌套） */
+function removeBlockById(nodes: EditorNode[], id: string): EditorNode[] {
+  return nodes.flatMap(n => {
+    if ((n as any).id === id) return []
+    if ('children' in n && Array.isArray(n.children))
+      return [{ ...n, children: removeBlockById(n.children, id) } as EditorNode]
+    return [n]
+  })
+}
+
+function updateNodeInTree(nodes: EditorNode[], id: string, type: 'image' | 'file' | 'code' | 'fold', updates: any): EditorNode[] {
   return nodes.map(n => {
     if (n.type === type && (n.id === id || (n as any).id === id)) return { ...n, ...updates } as EditorNode
     if ('children' in n && Array.isArray(n.children)) return { ...n, children: updateNodeInTree(n.children, id, type, updates) } as EditorNode
@@ -873,6 +895,100 @@ const IMAGE_TOOLBAR_PADDING = 8
 const selectedImageNode = computed(() => selectedImageId.value ? findNodeById(props.modelValue, selectedImageId.value, 'image') as any : null)
 const selectedFileNode = computed(() => selectedFileId.value ? findNodeById(props.modelValue, selectedFileId.value, 'file') as any : null)
 
+const selectedCodeBlockId = ref<string | null>(null)
+const selectedCodeBlockRect = ref({ top: 0, left: 0 })
+const selectedCodeBlockNode = computed(() => selectedCodeBlockId.value ? findNodeById(props.modelValue, selectedCodeBlockId.value, 'code') as any : null)
+
+const selectedFoldBlockId = ref<string | null>(null)
+const selectedFoldBlockRect = ref({ top: 0, left: 0 })
+const selectedFoldBlockNode = computed(() => selectedFoldBlockId.value ? findNodeById(props.modelValue, selectedFoldBlockId.value, 'fold') as any : null)
+
+const CODE_TOOLBAR_APPROX_HEIGHT = 44
+const CODE_TOOLBAR_APPROX_WIDTH = 320
+const FOLD_TOOLBAR_APPROX_HEIGHT = 44
+const FOLD_TOOLBAR_APPROX_WIDTH = 180
+
+function setCodeBlockLanguage(id: string, lang: string) {
+  if (Array.isArray(props.modelValue)) {
+    emit('update:modelValue', updateNodeInTree(props.modelValue, id, 'code', { language: lang }))
+  }
+}
+
+function copyCodeBlockContent(id: string) {
+  const el = editorRef.value
+  if (!el) return
+  const wrapper = el.querySelector(`.code-block-wrapper[data-id="${id}"]`) as HTMLElement | null
+  const editor = wrapper?.querySelector('.code-editor') as HTMLElement | null
+  if (editor) {
+    navigator.clipboard.writeText(editor.innerText).then(() => ElMessage.success(t('editor.copySuccess')))
+  }
+}
+
+function insertAfterBlock(blockEl: HTMLElement) {
+  if (!blockEl.parentElement) return
+  const newP = document.createElement('p')
+  newP.className = 'editor-block'
+  newP.setAttribute('data-id', genId())
+  newP.appendChild(document.createElement('br'))
+  if (blockEl.nextSibling) blockEl.parentElement.insertBefore(newP, blockEl.nextSibling)
+  else blockEl.parentElement.appendChild(newP)
+  const sel = window.getSelection()
+  if (sel) {
+    const newRange = document.createRange()
+    newRange.setStart(newP, 0)
+    newRange.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(newRange)
+  }
+  handleInput()
+}
+
+function deleteBlockById(id: string) {
+  if (Array.isArray(props.modelValue)) {
+    emit('update:modelValue', removeBlockById(props.modelValue, id))
+  }
+  selectedCodeBlockId.value = null
+  selectedFoldBlockId.value = null
+}
+
+function toggleFoldBlock(id: string) {
+  if (!selectedFoldBlockNode.value || !Array.isArray(props.modelValue)) return
+  const folded = !selectedFoldBlockNode.value.folded
+  emit('update:modelValue', updateNodeInTree(props.modelValue, id, 'fold', { folded }))
+}
+
+function insertAfterSelectedCodeBlock() {
+  const id = selectedCodeBlockId.value
+  const el = editorRef.value
+  if (!id || !el) return
+  const wrapper = el.querySelector(`.code-block-wrapper[data-id="${id}"]`) as HTMLElement | null
+  if (wrapper) insertAfterBlock(wrapper)
+}
+
+function insertAfterSelectedFoldBlock() {
+  const id = selectedFoldBlockId.value
+  const el = editorRef.value
+  if (!id || !el) return
+  const wrapper = el.querySelector(`.fold-block[data-id="${id}"]`) as HTMLElement | null
+  if (wrapper) insertAfterBlock(wrapper)
+}
+
+function removeEmptyLinesAroundSelectedCodeBlock() {
+  const id = selectedCodeBlockId.value
+  const el = editorRef.value
+  if (!id || !el) return
+  const wrapper = el.querySelector(`.code-block-wrapper[data-id="${id}"]`) as HTMLElement | null
+  if (wrapper) removeAdjacentEmptyLines(wrapper)
+}
+
+function removeEmptyLinesAroundSelectedFoldBlock() {
+  const id = selectedFoldBlockId.value
+  const el = editorRef.value
+  if (!id || !el) return
+  const wrapper = el.querySelector(`.fold-block[data-id="${id}"]`) as HTMLElement | null
+  if (wrapper) removeAdjacentEmptyLines(wrapper)
+}
+
 // --- Interaction Logic ---
 
 function selectionChangeHandler() {
@@ -888,57 +1004,36 @@ function selectionChangeHandler() {
 function onEditorClick(e: MouseEvent) {
   const target = e.target as HTMLElement
 
-  const foldCopy = target.closest('.fold-copy-btn') as HTMLElement | null
-  if (foldCopy) {
-    e.preventDefault()
-    const editor = foldCopy.closest('.code-block-wrapper')?.querySelector('.code-editor') as HTMLElement | null
-    if (editor) navigator.clipboard.writeText(editor.innerText).then(() => ElMessage.success(t('editor.copySuccess')))
-    return
-  }
-
-  const foldInsert = target.closest('.fold-insert-btn') as HTMLElement | null
-  if (foldInsert) {
-    e.preventDefault()
-    const block = foldInsert.closest('.fold-block, .code-block-wrapper') as HTMLElement | null
-    if (block && block.parentElement) {
-      const newP = document.createElement('p'); newP.className = 'editor-block'; newP.setAttribute('data-id', genId()); newP.appendChild(document.createElement('br'))
-      if (block.nextSibling) block.parentElement.insertBefore(newP, block.nextSibling)
-      else block.parentElement.appendChild(newP)
-      const sel = window.getSelection()
-      if (sel) {
-        const newRange = document.createRange(); newRange.setStart(newP, 0); newRange.collapse(true); sel.removeAllRanges(); sel.addRange(newRange)
-      }
-      handleInput()
+  const codeWrapper = target.closest('.code-block-wrapper') as HTMLElement | null
+  if (codeWrapper) {
+    const id = codeWrapper.getAttribute('data-id')
+    if (id) {
+      selectedCodeBlockId.value = id
+      const rect = codeWrapper.getBoundingClientRect()
+      const top = rect.top - CODE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0 ? rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING : rect.top + window.scrollY - CODE_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+      let left = rect.left + rect.width / 2 - CODE_TOOLBAR_APPROX_WIDTH / 2 + window.scrollX
+      left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - CODE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+      selectedCodeBlockRect.value = { top, left }
     }
-    return
-  }
-
-  const foldToggle = target.closest('.fold-toggle-btn')
-  if (foldToggle) {
-    e.preventDefault()
-    const id = foldToggle.closest('.fold-block')?.getAttribute('data-id')
-    if (id && Array.isArray(props.modelValue)) {
-      const toggleFoldInTree = (nodes: EditorNode[], targetId: string): EditorNode[] => nodes.map(n => {
-        if (n.type === 'fold' && n.id === targetId) return { ...n, folded: !n.folded }
-        if ('children' in n && Array.isArray(n.children)) return { ...n, children: toggleFoldInTree(n.children, targetId) }
-        return n
-      })
-      emit('update:modelValue', toggleFoldInTree(props.modelValue, id))
-    }
-    return
-  }
-
-  const codeCard = target.closest('.code-card') as HTMLElement | null
-  if (codeCard) {
-    const editor = codeCard.querySelector('.code-editor') as HTMLElement | null
-    if (editor && target !== editor) editor.focus()
-    selectedImageId.value = selectedFileId.value = null
+    selectedImageId.value = selectedFileId.value = selectedFoldBlockId.value = null
     return
   }
 
   const foldBlockStructure = target.closest('.fold-block') as HTMLElement | null
-  if (foldBlockStructure && !target.closest('.fold-content')) {
-    (foldBlockStructure.querySelector('.fold-content') as HTMLElement | null)?.focus()
+  if (foldBlockStructure) {
+    const id = foldBlockStructure.getAttribute('data-id')
+    if (id) {
+      selectedFoldBlockId.value = id
+      const rect = foldBlockStructure.getBoundingClientRect()
+      const top = rect.top - FOLD_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING < 0 ? rect.bottom + window.scrollY + IMAGE_TOOLBAR_PADDING : rect.top + window.scrollY - FOLD_TOOLBAR_APPROX_HEIGHT - IMAGE_TOOLBAR_PADDING
+      let left = rect.left + rect.width / 2 - FOLD_TOOLBAR_APPROX_WIDTH / 2 + window.scrollX
+      left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - FOLD_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
+      selectedFoldBlockRect.value = { top, left }
+    }
+    selectedImageId.value = selectedFileId.value = selectedCodeBlockId.value = null
+    if (!target.closest('.fold-content')) {
+      (foldBlockStructure.querySelector('.fold-content') as HTMLElement | null)?.focus()
+    }
     return
   }
 
@@ -954,7 +1049,7 @@ function onEditorClick(e: MouseEvent) {
     return
   }
 
-  if (target.closest('.image-toolbar-root') || target.closest('.file-toolbar-root')) return
+  if (target.closest('.image-toolbar-root') || target.closest('.file-toolbar-root') || target.closest('.code-toolbar-root') || target.closest('.fold-toolbar-root')) return
 
   const img = target.closest('img.image-block') as HTMLElement | null || target.closest('.image-block-wrapper')?.querySelector('img.image-block') as HTMLElement | null
   if (img) {
@@ -967,7 +1062,7 @@ function onEditorClick(e: MouseEvent) {
       left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - IMAGE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
       selectedImageRect.value = { top, left }
     }
-    selectedFileId.value = null
+    selectedFileId.value = selectedCodeBlockId.value = selectedFoldBlockId.value = null
     return
   }
 
@@ -983,11 +1078,11 @@ function onEditorClick(e: MouseEvent) {
       left = Math.max(IMAGE_TOOLBAR_PADDING, Math.min(window.innerWidth - FILE_TOOLBAR_APPROX_WIDTH - IMAGE_TOOLBAR_PADDING + window.scrollX, left))
       selectedFileRect.value = { top, left }
     }
-    selectedImageId.value = null
+    selectedImageId.value = selectedCodeBlockId.value = selectedFoldBlockId.value = null
     return
   }
 
-  selectedImageId.value = selectedFileId.value = null
+  selectedImageId.value = selectedFileId.value = selectedCodeBlockId.value = selectedFoldBlockId.value = null
 }
 
 function onEditorContextMenu(e: MouseEvent) {
@@ -1045,6 +1140,51 @@ function isEmptyP(el: Node | null): boolean {
   return el instanceof HTMLElement && (el.tagName.toLowerCase() === 'p' || el.tagName.startsWith('H')) && (el.innerHTML === '<br>' || el.innerText.trim() === '')
 }
 
+/** 获取前一个块元素（跳过 br 等） */
+function getPreviousBlockElement(blockEl: HTMLElement): HTMLElement | null {
+  let n: Node | null = blockEl.previousSibling
+  while (n) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as HTMLElement
+      if (el.classList?.contains('editor-block')) return el
+      n = n.previousSibling
+    } else n = n.previousSibling
+  }
+  return null
+}
+
+/** 获取后一个块元素 */
+function getNextBlockElement(blockEl: HTMLElement): HTMLElement | null {
+  let n: Node | null = blockEl.nextSibling
+  while (n) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as HTMLElement
+      if (el.classList?.contains('editor-block')) return el
+      n = n.nextSibling
+    } else n = n.nextSibling
+  }
+  return null
+}
+
+/** 移除指定块上方和下方的空行（空段落 + 紧跟的 br） */
+function removeAdjacentEmptyLines(blockEl: HTMLElement) {
+  let prev = getPreviousBlockElement(blockEl)
+  while (prev && isEmptyP(prev)) {
+    const brAfter = prev.nextSibling
+    prev.remove()
+    if (brAfter && brAfter.nodeType === Node.ELEMENT_NODE && (brAfter as HTMLElement).tagName === 'BR') brAfter.remove()
+    prev = getPreviousBlockElement(blockEl)
+  }
+  let next = getNextBlockElement(blockEl)
+  while (next && isEmptyP(next)) {
+    const brAfter = next.nextSibling
+    next.remove()
+    if (brAfter && brAfter.nodeType === Node.ELEMENT_NODE && (brAfter as HTMLElement).tagName === 'BR') brAfter.remove()
+    next = getNextBlockElement(blockEl)
+  }
+  handleInput()
+}
+
 function insertTaskListAtSelection() {
   restoreSelection(); const info = getInsertionContainer(); if (!info.container) return
   const currentBlock = info.container.childNodes[info.index] as HTMLElement
@@ -1064,7 +1204,7 @@ function insertTaskListAtSelection() {
 }
 
 function insertCodeBlock() {
-  insertNodesAtSelection({ type: 'code', id: genId(), content: '', language: 'javascript' })
+  insertNodesAtSelection({ type: 'code', id: genId(), content: '', language: 'text' })
 }
 
 function insertFoldBlock() {
@@ -1127,6 +1267,42 @@ defineExpose({
         </button>
         <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })">
           <AlignRight :size="16" />
+        </button>
+      </div>
+      <div v-if="selectedCodeBlockId && selectedCodeBlockNode" class="code-toolbar-root code-toolbar"
+        :style="{ top: selectedCodeBlockRect.top + 'px', left: selectedCodeBlockRect.left + 'px' }">
+        <select class="code-toolbar-select" :value="selectedCodeBlockNode.language || 'text'"
+          @change="(e) => setCodeBlockLanguage(selectedCodeBlockId!, (e.target as HTMLSelectElement).value)">
+          <option v-for="opt in CODE_LANGUAGES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <button type="button" class="code-toolbar-btn" :title="t('editor.codeCopy')" @click="copyCodeBlockContent(selectedCodeBlockId!)">
+          <Copy :size="16" />
+        </button>
+        <button type="button" class="code-toolbar-btn" :title="t('editor.foldInsertAfter')" @click="insertAfterSelectedCodeBlock">
+          <Plus :size="16" />
+        </button>
+        <button type="button" class="code-toolbar-btn" title="移除上下空行" @click="removeEmptyLinesAroundSelectedCodeBlock">
+          <Minus :size="16" />
+        </button>
+        <button type="button" class="code-toolbar-btn" title="删除块" @click="deleteBlockById(selectedCodeBlockId!)">
+          <Trash2 :size="16" />
+        </button>
+      </div>
+      <div v-if="selectedFoldBlockId && selectedFoldBlockNode" class="fold-toolbar-root fold-toolbar"
+        :style="{ top: selectedFoldBlockRect.top + 'px', left: selectedFoldBlockRect.left + 'px' }">
+        <button type="button" class="fold-toolbar-btn" :title="selectedFoldBlockNode.folded ? '展开' : '折叠'"
+          @click="toggleFoldBlock(selectedFoldBlockId!)">
+          <ChevronDown v-if="selectedFoldBlockNode.folded" :size="16" />
+          <ChevronUp v-else :size="16" />
+        </button>
+        <button type="button" class="fold-toolbar-btn" :title="t('editor.foldInsertAfter')" @click="insertAfterSelectedFoldBlock">
+          <Plus :size="16" />
+        </button>
+        <button type="button" class="fold-toolbar-btn" title="移除上下空行" @click="removeEmptyLinesAroundSelectedFoldBlock">
+          <Minus :size="16" />
+        </button>
+        <button type="button" class="fold-toolbar-btn" title="删除块" @click="deleteBlockById(selectedFoldBlockId!)">
+          <Trash2 :size="16" />
         </button>
       </div>
       <div v-if="selectedFileId && selectedFileNode" class="file-toolbar-root file-toolbar"
@@ -1294,30 +1470,6 @@ defineExpose({
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
-:deep(.code-header) {
-  padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.04);
-  border-bottom: 1px solid var(--file-card-border);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--file-size-color);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-:deep(.code-header-btns) {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.dark :deep(.code-header) {
-  background: rgba(255, 255, 255, 0.04);
-}
-
 :deep(.code-editor) {
   padding: 16px;
   font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -1330,6 +1482,59 @@ defineExpose({
   color: var(--app-text-color);
   min-height: 1em;
 }
+
+/* 深色模式下代码块内容区域统一深色背景（覆盖 highlight.js 浅色主题带来的白色） */
+.dark :deep(.code-editor),
+.dark :deep(.code-editor.hljs),
+.dark :deep(.code-editor .hljs) {
+  background: #0d1117 !important;
+  color: #c9d1d9 !important;
+}
+.dark :deep(.code-editor pre),
+.dark :deep(.code-editor code) {
+  background: transparent !important;
+  color: inherit !important;
+}
+.dark :deep(.code-editor .hljs-doctag),
+.dark :deep(.code-editor .hljs-keyword),
+.dark :deep(.code-editor .hljs-meta .hljs-keyword),
+.dark :deep(.code-editor .hljs-template-tag),
+.dark :deep(.code-editor .hljs-template-variable),
+.dark :deep(.code-editor .hljs-type),
+.dark :deep(.code-editor .hljs-variable.language_) { color: #ff7b72; }
+.dark :deep(.code-editor .hljs-title),
+.dark :deep(.code-editor .hljs-title.class_),
+.dark :deep(.code-editor .hljs-title.class_.inherited__),
+.dark :deep(.code-editor .hljs-title.function_) { color: #d2a8ff; }
+.dark :deep(.code-editor .hljs-attr),
+.dark :deep(.code-editor .hljs-attribute),
+.dark :deep(.code-editor .hljs-literal),
+.dark :deep(.code-editor .hljs-meta),
+.dark :deep(.code-editor .hljs-number),
+.dark :deep(.code-editor .hljs-operator),
+.dark :deep(.code-editor .hljs-variable),
+.dark :deep(.code-editor .hljs-selector-attr),
+.dark :deep(.code-editor .hljs-selector-class),
+.dark :deep(.code-editor .hljs-selector-id) { color: #79c0ff; }
+.dark :deep(.code-editor .hljs-regexp),
+.dark :deep(.code-editor .hljs-string),
+.dark :deep(.code-editor .hljs-meta .hljs-string) { color: #a5d6ff; }
+.dark :deep(.code-editor .hljs-built_in),
+.dark :deep(.code-editor .hljs-symbol) { color: #ffa657; }
+.dark :deep(.code-editor .hljs-comment),
+.dark :deep(.code-editor .hljs-code),
+.dark :deep(.code-editor .hljs-formula) { color: #8b949e; }
+.dark :deep(.code-editor .hljs-name),
+.dark :deep(.code-editor .hljs-quote),
+.dark :deep(.code-editor .hljs-selector-tag),
+.dark :deep(.code-editor .hljs-selector-pseudo) { color: #7ee787; }
+.dark :deep(.code-editor .hljs-subst) { color: #c9d1d9; }
+.dark :deep(.code-editor .hljs-section) { color: #1f6feb; font-weight: bold; }
+.dark :deep(.code-editor .hljs-bullet) { color: #f2cc60; }
+.dark :deep(.code-editor .hljs-emphasis) { color: #c9d1d9; font-style: italic; }
+.dark :deep(.code-editor .hljs-strong) { color: #c9d1d9; font-weight: bold; }
+.dark :deep(.code-editor .hljs-addition) { color: #aff5b4; background-color: #033a16; }
+.dark :deep(.code-editor .hljs-deletion) { color: #ffdcd7; background-color: #67060c; }
 
 /* Fold Block Styles */
 :deep(.fold-block) {
@@ -1356,67 +1561,6 @@ defineExpose({
   font-size: 13px;
   font-weight: 500;
   user-select: none;
-}
-
-:deep(.fold-toggle-btn),
-:deep(.fold-insert-btn),
-:deep(.fold-copy-btn) {
-  background: rgba(0, 0, 0, 0.05);
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  color: var(--app-text-color);
-  font-size: 10px;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-
-:deep(.fold-toggle-btn:hover),
-:deep(.fold-insert-btn:hover),
-:deep(.fold-copy-btn:hover) {
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.dark :deep(.fold-toggle-btn),
-.dark :deep(.fold-insert-btn),
-.dark :deep(.fold-copy-btn) {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.dark :deep(.fold-toggle-btn:hover),
-.dark :deep(.fold-insert-btn:hover),
-.dark :deep(.fold-copy-btn:hover) {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-:deep(.fold-insert-btn) {
-  font-size: 14px;
-  margin-left: 4px;
-}
-
-:deep(.fold-copy-btn) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.fold-copy-btn .copy-icon-placeholder) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.fold-copy-btn .copy-icon-placeholder svg) {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
 }
 
 :deep(.fold-content) {
@@ -1534,5 +1678,113 @@ defineExpose({
 
 .dark .file-toolbar-btn:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* 代码块 / 折叠块悬浮工具栏（与图片/文件工具栏一致） */
+.code-toolbar-root,
+.fold-toolbar-root {
+  position: absolute;
+  z-index: 1000;
+}
+
+.code-toolbar,
+.fold-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--app-bg-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dark .code-toolbar,
+.dark .fold-toolbar {
+  background: var(--app-surface-color);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.code-toolbar-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--app-border-color);
+  background: var(--app-bg-color);
+  color: var(--app-text-color);
+  font-size: 12px;
+  min-width: 100px;
+}
+
+.dark .code-toolbar-select {
+  background: var(--app-surface-color);
+}
+
+.code-toolbar-btn,
+.fold-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-color);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.code-toolbar-btn svg,
+.fold-toolbar-btn svg {
+  width: 16px;
+  height: 16px;
+  color: inherit;
+  stroke: currentColor;
+}
+
+.code-toolbar-btn:hover,
+.fold-toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dark .code-toolbar-btn:hover,
+.dark .fold-toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+</style>
+
+<!-- 工具栏在 Teleport 到 body 时需全局样式，确保图标与按钮可见 -->
+<style>
+.code-toolbar-root .code-toolbar,
+.fold-toolbar-root .fold-toolbar {
+  color: var(--app-text-color);
+}
+.code-toolbar-root .code-toolbar-btn,
+.fold-toolbar-root .fold-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-color);
+  cursor: pointer;
+}
+.code-toolbar-root .code-toolbar-btn svg,
+.fold-toolbar-root .fold-toolbar-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: currentColor;
+  stroke: currentColor;
 }
 </style>

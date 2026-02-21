@@ -132,6 +132,21 @@ body {
   box-shadow: 0 0 0 1px var(--app-border-color) inset !important;
 }
 
+/* 深色模式下代码块内容区域：覆盖 highlight.js/github 主题的白色背景 */
+.dark .code-editor,
+.dark .code-editor.hljs,
+.dark .code-editor .hljs,
+.dark .code-editor pre,
+.dark .code-editor code {
+  background: #0d1117 !important;
+  color: #c9d1d9 !important;
+}
+.dark .code-editor pre,
+.dark .code-editor code {
+  background: transparent !important;
+  color: inherit !important;
+}
+
 .app-content {
   flex: 1;
   overflow: auto;
