@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 export interface Block {
   id: string
@@ -62,18 +65,22 @@ const onFileUpload = (index: number) => {
     <div v-for="(block, index) in blocks" :key="block.id" class="block-item">
       <div class="block-controls">
         <el-dropdown trigger="click">
-          <el-button icon="Plus" circle size="small" />
+          <el-tooltip :content="t('blockEditor.addBlock')" placement="top">
+            <el-button icon="Plus" circle size="small" />
+          </el-tooltip>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="addBlock(index, 'text')">正文</el-dropdown-item>
-              <el-dropdown-item @click="addBlock(index, 'h1')">标题 1</el-dropdown-item>
-              <el-dropdown-item @click="addBlock(index, 'h2')">标题 2</el-dropdown-item>
-              <el-dropdown-item @click="onImageUpload(index)">图片</el-dropdown-item>
-              <el-dropdown-item @click="onFileUpload(index)">文件</el-dropdown-item>
+              <el-dropdown-item @click="addBlock(index, 'text')">{{ t('blockEditor.addText') }}</el-dropdown-item>
+              <el-dropdown-item @click="addBlock(index, 'h1')">{{ t('blockEditor.addH1') }}</el-dropdown-item>
+              <el-dropdown-item @click="addBlock(index, 'h2')">{{ t('blockEditor.addH2') }}</el-dropdown-item>
+              <el-dropdown-item @click="onImageUpload(index)">{{ t('blockEditor.addImage') }}</el-dropdown-item>
+              <el-dropdown-item @click="onFileUpload(index)">{{ t('blockEditor.addFile') }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button icon="Delete" circle size="small" type="danger" @click="removeBlock(index)" />
+        <el-tooltip :content="t('blockEditor.deleteBlock')" placement="top">
+          <el-button icon="Delete" circle size="small" type="danger" @click="removeBlock(index)" />
+        </el-tooltip>
       </div>
 
       <div class="block-content">
@@ -82,34 +89,34 @@ const onFileUpload = (index: number) => {
             v-model="block.content"
             type="textarea"
             autosize
-            placeholder="输入内容..."
+            :placeholder="t('blockEditor.placeholder')"
             :style="{ fontWeight: block.bold ? 'bold' : 'normal', color: block.color }"
           />
           <div class="text-tools">
-            <el-checkbox v-model="block.bold">加粗</el-checkbox>
+            <el-checkbox v-model="block.bold">{{ t('blockEditor.bold') }}</el-checkbox>
             <el-color-picker v-model="block.color" size="small" />
           </div>
         </template>
 
         <template v-else-if="block.type === 'h1'">
-          <el-input v-model="block.content" placeholder="一级标题" class="h1-input" />
+          <el-input v-model="block.content" :placeholder="t('blockEditor.h1Placeholder')" class="h1-input" />
         </template>
 
         <template v-else-if="block.type === 'h2'">
-          <el-input v-model="block.content" placeholder="二级标题" class="h2-input" />
+          <el-input v-model="block.content" :placeholder="t('blockEditor.h2Placeholder')" class="h2-input" />
         </template>
 
         <template v-else-if="block.type === 'image'">
           <div class="image-block">
             <img :src="block.url" v-if="block.url" />
-            <div v-else class="placeholder">图片加载中...</div>
+            <div v-else class="placeholder">{{ t('blockEditor.imageLoading') }}</div>
           </div>
         </template>
 
         <template v-else-if="block.type === 'file'">
           <div class="file-block">
             <el-link :href="block.url" target="_blank" icon="Document">
-              {{ block.fileName || '未知文件' }}
+              {{ block.fileName || t('blockEditor.unknownFile') }}
             </el-link>
           </div>
         </template>
@@ -129,7 +136,6 @@ const onFileUpload = (index: number) => {
 .block-item {
   display: flex;
   gap: 10px;
-  group: hover;
 }
 
 .block-controls {

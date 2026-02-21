@@ -1255,19 +1255,25 @@ defineExpose({
     <Teleport to="body">
       <div v-if="selectedImageId && selectedImageNode" class="image-toolbar-root image-toolbar"
         :style="{ top: selectedImageRect.top + 'px', left: selectedImageRect.left + 'px' }">
-        <label class="image-toolbar-label">宽度%</label>
+        <label class="image-toolbar-label">{{ t('editor.imageWidthPercent') }}</label>
         <input type="number" class="image-toolbar-input" min="10" max="100"
           :value="selectedImageNode.widthPercent ?? 100"
           @change="(e) => updateImageNode({ widthPercent: Math.min(100, Math.max(10, Number((e.target as HTMLInputElement).value) || 100)) })" />
-        <button type="button" class="image-toolbar-btn" title="左对齐" @click="updateImageNode({ align: 'left' })">
-          <AlignLeft :size="16" />
-        </button>
-        <button type="button" class="image-toolbar-btn" title="居中" @click="updateImageNode({ align: 'center' })">
-          <AlignCenter :size="16" />
-        </button>
-        <button type="button" class="image-toolbar-btn" title="右对齐" @click="updateImageNode({ align: 'right' })">
-          <AlignRight :size="16" />
-        </button>
+        <el-tooltip :content="t('editor.toolbarAlignLeft')" placement="top">
+          <button type="button" class="image-toolbar-btn" @click="updateImageNode({ align: 'left' })">
+            <AlignLeft :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.toolbarAlignCenter')" placement="top">
+          <button type="button" class="image-toolbar-btn" @click="updateImageNode({ align: 'center' })">
+            <AlignCenter :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.toolbarAlignRight')" placement="top">
+          <button type="button" class="image-toolbar-btn" @click="updateImageNode({ align: 'right' })">
+            <AlignRight :size="16" />
+          </button>
+        </el-tooltip>
       </div>
       <div v-if="selectedCodeBlockId && selectedCodeBlockNode" class="code-toolbar-root code-toolbar"
         :style="{ top: selectedCodeBlockRect.top + 'px', left: selectedCodeBlockRect.left + 'px' }">
@@ -1275,47 +1281,68 @@ defineExpose({
           @change="(e) => setCodeBlockLanguage(selectedCodeBlockId!, (e.target as HTMLSelectElement).value)">
           <option v-for="opt in CODE_LANGUAGES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
-        <button type="button" class="code-toolbar-btn" :title="t('editor.codeCopy')" @click="copyCodeBlockContent(selectedCodeBlockId!)">
-          <Copy :size="16" />
-        </button>
-        <button type="button" class="code-toolbar-btn" :title="t('editor.foldInsertAfter')" @click="insertAfterSelectedCodeBlock">
-          <Plus :size="16" />
-        </button>
-        <button type="button" class="code-toolbar-btn" title="移除上下空行" @click="removeEmptyLinesAroundSelectedCodeBlock">
-          <Minus :size="16" />
-        </button>
-        <button type="button" class="code-toolbar-btn" title="删除块" @click="deleteBlockById(selectedCodeBlockId!)">
-          <Trash2 :size="16" />
-        </button>
+        <el-tooltip :content="t('editor.codeCopy')" placement="top">
+          <button type="button" class="code-toolbar-btn" @click="copyCodeBlockContent(selectedCodeBlockId!)">
+            <Copy :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.foldInsertAfter')" placement="top">
+          <button type="button" class="code-toolbar-btn" @click="insertAfterSelectedCodeBlock">
+            <Plus :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.removeEmptyLines')" placement="top">
+          <button type="button" class="code-toolbar-btn" @click="removeEmptyLinesAroundSelectedCodeBlock">
+            <Minus :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.deleteBlock')" placement="top">
+          <button type="button" class="code-toolbar-btn" @click="deleteBlockById(selectedCodeBlockId!)">
+            <Trash2 :size="16" />
+          </button>
+        </el-tooltip>
       </div>
       <div v-if="selectedFoldBlockId && selectedFoldBlockNode" class="fold-toolbar-root fold-toolbar"
         :style="{ top: selectedFoldBlockRect.top + 'px', left: selectedFoldBlockRect.left + 'px' }">
-        <button type="button" class="fold-toolbar-btn" :title="selectedFoldBlockNode.folded ? '展开' : '折叠'"
-          @click="toggleFoldBlock(selectedFoldBlockId!)">
-          <ChevronDown v-if="selectedFoldBlockNode.folded" :size="16" />
-          <ChevronUp v-else :size="16" />
-        </button>
-        <button type="button" class="fold-toolbar-btn" :title="t('editor.foldInsertAfter')" @click="insertAfterSelectedFoldBlock">
-          <Plus :size="16" />
-        </button>
-        <button type="button" class="fold-toolbar-btn" title="移除上下空行" @click="removeEmptyLinesAroundSelectedFoldBlock">
-          <Minus :size="16" />
-        </button>
-        <button type="button" class="fold-toolbar-btn" title="删除块" @click="deleteBlockById(selectedFoldBlockId!)">
-          <Trash2 :size="16" />
-        </button>
+        <el-tooltip :content="selectedFoldBlockNode.folded ? t('editor.expandFold') : t('editor.collapseFold')" placement="top">
+          <button type="button" class="fold-toolbar-btn" @click="toggleFoldBlock(selectedFoldBlockId!)">
+            <ChevronDown v-if="selectedFoldBlockNode.folded" :size="16" />
+            <ChevronUp v-else :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.foldInsertAfter')" placement="top">
+          <button type="button" class="fold-toolbar-btn" @click="insertAfterSelectedFoldBlock">
+            <Plus :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.removeEmptyLines')" placement="top">
+          <button type="button" class="fold-toolbar-btn" @click="removeEmptyLinesAroundSelectedFoldBlock">
+            <Minus :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.deleteBlock')" placement="top">
+          <button type="button" class="fold-toolbar-btn" @click="deleteBlockById(selectedFoldBlockId!)">
+            <Trash2 :size="16" />
+          </button>
+        </el-tooltip>
       </div>
       <div v-if="selectedFileId && selectedFileNode" class="file-toolbar-root file-toolbar"
         :style="{ top: selectedFileRect.top + 'px', left: selectedFileRect.left + 'px' }">
-        <button type="button" class="file-toolbar-btn" title="左对齐" @click="updateFileNode({ align: 'left' })">
-          <AlignLeft :size="16" />
-        </button>
-        <button type="button" class="file-toolbar-btn" title="居中" @click="updateFileNode({ align: 'center' })">
-          <AlignCenter :size="16" />
-        </button>
-        <button type="button" class="file-toolbar-btn" title="右对齐" @click="updateFileNode({ align: 'right' })">
-          <AlignRight :size="16" />
-        </button>
+        <el-tooltip :content="t('editor.toolbarAlignLeft')" placement="top">
+          <button type="button" class="file-toolbar-btn" @click="updateFileNode({ align: 'left' })">
+            <AlignLeft :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.toolbarAlignCenter')" placement="top">
+          <button type="button" class="file-toolbar-btn" @click="updateFileNode({ align: 'center' })">
+            <AlignCenter :size="16" />
+          </button>
+        </el-tooltip>
+        <el-tooltip :content="t('editor.toolbarAlignRight')" placement="top">
+          <button type="button" class="file-toolbar-btn" @click="updateFileNode({ align: 'right' })">
+            <AlignRight :size="16" />
+          </button>
+        </el-tooltip>
       </div>
     </Teleport>
   </div>

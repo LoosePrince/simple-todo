@@ -68,9 +68,29 @@
         "copySuccess": "已复制到剪贴板",
         "foldTitle": "折叠块",
         "foldInsertAfter": "在后方插入新行",
+        "removeEmptyLines": "移除上下空行",
+        "deleteBlock": "删除块",
+        "expandFold": "展开",
+        "collapseFold": "折叠",
+        "imageWidthPercent": "宽度%",
         "bubbleBold": "加粗",
         "bubbleItalic": "斜体",
         "bubbleColor": "文字颜色"
+    },
+    "blockEditor": {
+        "addBlock": "添加块",
+        "addText": "正文",
+        "addH1": "标题 1",
+        "addH2": "标题 2",
+        "addImage": "图片",
+        "addFile": "文件",
+        "deleteBlock": "删除块",
+        "placeholder": "输入内容...",
+        "bold": "加粗",
+        "h1Placeholder": "一级标题",
+        "h2Placeholder": "二级标题",
+        "imageLoading": "图片加载中...",
+        "unknownFile": "未知文件"
     },
     "titleBar": {
         "newWindow": "新窗口"

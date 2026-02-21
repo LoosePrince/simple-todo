@@ -68,9 +68,29 @@
         "copySuccess": "Copied to clipboard",
         "foldTitle": "Fold Block",
         "foldInsertAfter": "Insert new line after",
+        "removeEmptyLines": "Remove empty lines above and below",
+        "deleteBlock": "Delete block",
+        "expandFold": "Expand",
+        "collapseFold": "Collapse",
+        "imageWidthPercent": "Width %",
         "bubbleBold": "Bold",
         "bubbleItalic": "Italic",
         "bubbleColor": "Text color"
+    },
+    "blockEditor": {
+        "addBlock": "Add block",
+        "addText": "Text",
+        "addH1": "Heading 1",
+        "addH2": "Heading 2",
+        "addImage": "Image",
+        "addFile": "File",
+        "deleteBlock": "Delete block",
+        "placeholder": "Enter content...",
+        "bold": "Bold",
+        "h1Placeholder": "Heading 1",
+        "h2Placeholder": "Heading 2",
+        "imageLoading": "Loading image...",
+        "unknownFile": "Unknown file"
     },
     "titleBar": {
         "newWindow": "New window"
