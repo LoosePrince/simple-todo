@@ -1,0 +1,65 @@
+name: Build Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app (NSIS installer + portable exe)
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $outDir = Join-Path $env:GITHUB_WORKSPACE 'dist-artifacts'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/target/release'
+          $portable = Get-ChildItem -Path $releaseDir -Filter '*.exe' |
+            Where-Object { $_.DirectoryName -eq $releaseDir } |
+            Select-Object -First 1
+          if (-not $portable) {
+            throw "Portable exe not found in $releaseDir"
+          }
+          Copy-Item -LiteralPath $portable.FullName -Destination (Join-Path $outDir '简易代办.exe')
+
+          $nsisDir = Join-Path $releaseDir 'bundle/nsis'
+          $setup = Get-ChildItem -Path $nsisDir -Filter '*setup.exe' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $setup) {
+            throw "NSIS setup.exe not found in $nsisDir"
+          }
+          Copy-Item -LiteralPath $setup.FullName -Destination (Join-Path $outDir 'setup.exe')
+
+          Write-Host "Artifacts:"
+          Get-ChildItem -Path $outDir | Format-Table Name, Length
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: dist-artifacts/
+          if-no-files-found: error
