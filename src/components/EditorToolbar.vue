@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { AlignCenter, AlignLeft, AlignRight, Bold, Code, FilePlus, Image as ImageIcon, Italic, List, ListTodo, Redo2, SquareChevronDown, Undo2 } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, Bold, Code, FilePlus, FileText, Image as ImageIcon, Italic, List, ListTodo, Redo2, Square, SquareChevronDown, Undo2 } from 'lucide-vue-next'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const emit = defineEmits(['command', 'insert-image', 'insert-file', 'insert-task', 'insert-code', 'insert-fold', 'mousedown'])
+const emit = defineEmits(['command', 'insert-image', 'insert-file', 'insert-task', 'insert-code', 'insert-markdown', 'insert-canvas', 'insert-fold', 'mousedown'])
 
 const commands = [
   { icon: Bold, key: 'toolbarBold', cmd: 'bold' },
@@ -311,6 +311,16 @@ onBeforeUnmount(() => {
       <el-tooltip :content="t('editor.toolbarInsertCode')" placement="top" popper-class="editor-tooltip-nohit">
         <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-code')">
           <Code :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarInsertMarkdown')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-markdown')">
+          <FileText :size="16" />
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="t('editor.toolbarInsertCanvas')" placement="top" popper-class="editor-tooltip-nohit">
+        <el-button circle @mousedown="emit('mousedown')" @click="emit('insert-canvas')">
+          <Square :size="16" />
         </el-button>
       </el-tooltip>
       <el-tooltip :content="t('editor.toolbarInsertFold')" placement="top" popper-class="editor-tooltip-nohit">

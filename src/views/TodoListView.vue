@@ -5,7 +5,8 @@ import { Info, Plus, Settings, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import type { EditorNode } from '../components/AdvancedEditor.vue'
+import type { EditorNode } from '../editor/types'
+import { collectTaskItems, countTaskProgress, normalizeDocument, stripFileSizes } from '../editor/document'
 import { useSettingsStore } from '../store/settings'
 import { useTodoStore } from '../store/todo'
 
@@ -14,67 +15,6 @@ const todoStore = useTodoStore()
 const settingsStore = useSettingsStore()
 const router = useRouter()
 const newTodoTitle = ref('')
-
-/** 从节点树抽取纯文本（用于任务项标签） */
-function getTextFromEditorNode(node: EditorNode): string {
-  if (node.type === 'text') return node.value ?? ''
-  if ('children' in node && Array.isArray(node.children)) {
-    return node.children.map(getTextFromEditorNode).join('')
-  }
-  return ''
-}
-
-/** 从 blocks 中收集所有 taskItem，用于弹窗列表 */
-function collectTaskItems(blocks: EditorNode[]): { node: EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }; label: string }[] {
-  const out: { node: EditorNode & { type: 'taskItem'; checked: boolean; children: EditorNode[] }; label: string }[] = []
-  function walk(nodes: EditorNode[]) {
-    for (const n of nodes) {
-      if (n.type === 'taskItem') {
-        const label = getTextFromEditorNode(n).trim() || '(无文字)'
-        out.push({ node: n, label })
-      }
-      if ('children' in n && Array.isArray(n.children)) walk(n.children)
-    }
-  }
-  walk(blocks)
-  return out
-}
-
-/** 从详情 JSON 的节点树中统计 taskItem 的完成数/总数 */
-function countTaskProgress(nodes: unknown): { done: number; total: number } {
-  let done = 0
-  let total = 0
-  function walk(obj: unknown) {
-    if (!obj || typeof obj !== 'object') return
-    const node = obj as { type?: string; checked?: boolean; children?: unknown[] }
-    if (Array.isArray(node)) {
-      node.forEach(walk)
-      return
-    }
-    if (node.type === 'taskItem') {
-      total += 1
-      if (node.checked === true) done += 1
-    }
-    if (Array.isArray(node.children)) node.children.forEach(walk)
-  }
-  if (Array.isArray(nodes)) nodes.forEach(walk)
-  else walk(nodes)
-  return { done, total }
-}
-
-/** 保存前去掉 file 节点的 fileSize（与详情页一致） */
-function stripFileSizes(nodes: EditorNode[]): EditorNode[] {
-  return nodes.map((node) => {
-    if (node.type === 'file') {
-      const { fileSize: _, ...rest } = node
-      return rest as EditorNode
-    }
-    if ('children' in node && Array.isArray(node.children)) {
-      return { ...node, children: stripFileSizes(node.children) }
-    }
-    return node
-  })
-}
 
 const taskProgressMap = ref<Record<string, { done: number; total: number }>>({})
 
@@ -166,7 +106,7 @@ async function openTaskPopup(item: { id: string; folder_name: string; title: str
     taskPopupTodoId.value = item.id
     taskPopupFolderName.value = item.folder_name
     taskPopupTitle.value = item.title
-    taskPopupBlocks.value = Array.isArray(blocks) ? blocks : []
+    taskPopupBlocks.value = Array.isArray(blocks) ? normalizeDocument(blocks) : []
     taskPopupVisible.value = true
   } catch {
     ElMessage.error(t('todo.taskLoadError') || '加载任务失败')
@@ -179,7 +119,7 @@ async function saveTaskPopupAndUpdateProgress() {
   const dataPath = settingsStore.config.data_path
   if (!id || !folderName || !dataPath) return
   try {
-    const toSave = stripFileSizes(taskPopupBlocks.value)
+    const toSave = stripFileSizes(normalizeDocument(taskPopupBlocks.value))
     await invoke('save_todo_detail', {
       dataPath,
       folderName,

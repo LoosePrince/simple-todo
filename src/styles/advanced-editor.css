@@ -1,0 +1,490 @@
+@reference "tailwindcss";
+
+.advanced-editor-container {
+  @apply h-full w-full;
+  background: var(--app-bg-color);
+  color: var(--app-text-color);
+}
+
+.advanced-editor {
+  @apply min-h-[300px] p-5 outline-none;
+  line-height: 1.6;
+  font-family: var(--app-font-family);
+}
+
+.editor-block {
+  @apply mb-2;
+}
+
+.editable-text-block {
+  @apply min-h-[1.6em] break-words whitespace-pre-wrap outline-none;
+}
+
+.editable-text-block:empty::before {
+  content: "\00a0";
+}
+
+.editable-text-block:focus {
+  @apply rounded-sm;
+  box-shadow: inset 0 -1px 0 rgba(59, 130, 246, 0.35);
+}
+
+.advanced-editor h1.editor-block {
+  @apply mt-4 text-[2em] font-bold;
+}
+
+.advanced-editor h2.editor-block {
+  @apply mt-3 text-[1.5em] font-bold;
+}
+
+.list-block {
+  @apply my-2 pl-6;
+}
+
+.task-list {
+  @apply my-2 list-none pl-0;
+}
+
+.task-item {
+  @apply my-1 flex items-start gap-2;
+}
+
+.task-item-checkbox {
+  @apply mt-[0.45em] shrink-0 cursor-pointer;
+  accent-color: #3b82f6;
+}
+
+.task-item-content {
+  @apply min-w-0 flex-1;
+}
+
+.task-item[data-checked="true"] .task-item-content {
+  color: var(--file-size-color);
+  text-decoration: line-through;
+}
+
+.image-block-wrapper,
+.file-block-wrapper,
+.code-block-wrapper,
+.markdown-block-wrapper,
+.canvas-block-wrapper,
+.fold-block {
+  @apply relative;
+}
+
+.block-boundary {
+  @apply block h-3 cursor-text rounded-sm;
+}
+
+.block-boundary:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.block-boundary::after {
+  @apply block h-px w-full opacity-0 transition-opacity;
+  content: "";
+  transform: translateY(6px);
+  background: rgba(59, 130, 246, 0.45);
+}
+
+.block-boundary:hover::after {
+  opacity: 1;
+}
+
+.image-block {
+  @apply m-[5px] inline-block max-w-full cursor-default align-middle shadow-md;
+  border-radius: 8px;
+}
+
+.image-block-wrapper:hover .image-block,
+.file-block-wrapper:hover .file-card,
+.code-block-wrapper:hover .code-card,
+.markdown-block-wrapper:hover .markdown-card,
+.canvas-block-wrapper:hover .canvas-card,
+.fold-block:hover .fold-line-top,
+.fold-block:hover .fold-line-bottom {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+
+.file-block {
+  @apply mx-[5px] inline-block cursor-default align-middle;
+}
+
+.file-card {
+  @apply inline-flex items-center gap-2.5 rounded-lg px-5 py-3 transition-shadow;
+  background: var(--file-card-bg);
+  border: 1px solid var(--file-card-border);
+  color: var(--app-text-color);
+}
+
+.file-icon {
+  @apply inline-flex h-6 w-6 shrink-0 items-center justify-center;
+}
+
+.file-icon-fallback {
+  @apply text-xl leading-none;
+}
+
+.file-name {
+  @apply text-sm;
+  color: var(--app-text-color);
+}
+
+.file-size {
+  @apply ml-1.5 text-xs;
+  color: var(--file-size-color);
+}
+
+.code-card {
+  @apply flex max-w-full flex-col overflow-hidden rounded-lg shadow-sm transition-shadow;
+  background: var(--file-card-bg);
+  border: 1px solid var(--file-card-border);
+}
+
+.code-card::before {
+  @apply block px-4 py-1.5 text-xs font-medium uppercase tracking-wide;
+  content: attr(data-language);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--file-size-color);
+  border-bottom: 1px solid var(--file-card-border);
+}
+
+.code-block-wrapper[data-language] .code-card::before {
+  content: attr(data-language);
+}
+
+.code-editor {
+  @apply block box-border min-h-24 w-full resize-y overflow-x-auto border-0 bg-transparent p-4 text-[13px] outline-none;
+  color: var(--app-text-color);
+  caret-color: var(--app-text-color);
+  font-family: 'Fira Code', Consolas, Monaco, 'Courier New', monospace;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.code-editor:focus {
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.22);
+}
+
+.dark .code-card::before {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dark .code-editor {
+  background: #0d1117 !important;
+  color: #c9d1d9 !important;
+}
+
+.fold-block {
+  @apply border-0 p-0;
+}
+
+.fold-line-top,
+.fold-line-bottom {
+  @apply my-1 h-px w-full opacity-80 transition-shadow;
+  background: var(--file-card-border);
+}
+
+.fold-header {
+  @apply flex select-none items-center gap-3 py-1 text-[13px] font-medium;
+  color: var(--file-size-color);
+}
+
+.fold-header::before {
+  @apply inline-block text-[10px];
+  content: "▼";
+}
+
+.fold-block[data-folded="true"] .fold-header::before {
+  content: "▶";
+}
+
+.fold-title {
+  @apply rounded px-1.5 py-0.5;
+  background: var(--file-card-bg);
+  border: 1px solid var(--file-card-border);
+}
+
+.fold-content {
+  @apply py-1 pl-3 outline-none;
+  border-left: 1px solid var(--file-card-border);
+  margin-left: 10px;
+}
+
+.image-toolbar,
+.file-toolbar,
+.code-toolbar,
+.fold-toolbar {
+  @apply absolute z-[1000] flex items-center gap-1.5 rounded-lg px-2 py-1.5 shadow-lg backdrop-blur;
+  background: color-mix(in srgb, var(--app-bg-color) 92%, transparent);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dark .image-toolbar,
+.dark .file-toolbar,
+.dark .code-toolbar,
+.dark .fold-toolbar {
+  background: color-mix(in srgb, var(--app-surface-color) 92%, transparent);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.image-toolbar-label {
+  @apply whitespace-nowrap text-xs;
+  color: var(--app-text-color);
+}
+
+.image-toolbar-input {
+  @apply w-[52px] rounded px-1.5 py-1 text-xs outline-none;
+  color: var(--app-text-color);
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  font-family: var(--app-font-family);
+}
+
+.image-toolbar-input:focus,
+.code-toolbar-select:focus {
+  border-color: rgba(59, 130, 246, 0.65);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+
+.image-toolbar-btn,
+.file-toolbar-btn,
+.code-toolbar-btn,
+.fold-toolbar-btn {
+  @apply inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 transition-colors;
+  color: var(--app-text-color);
+}
+
+.image-toolbar-btn:hover,
+.file-toolbar-btn:hover,
+.code-toolbar-btn:hover,
+.fold-toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dark .image-toolbar-btn:hover,
+.dark .file-toolbar-btn:hover,
+.dark .code-toolbar-btn:hover,
+.dark .fold-toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.code-toolbar-select {
+  @apply min-w-[100px] rounded-md px-2 py-1 text-xs outline-none;
+  background: var(--app-bg-color);
+  color: var(--app-text-color);
+  border: 1px solid var(--app-border-color);
+}
+
+.markdown-card {
+  @apply flex max-w-full flex-col overflow-hidden rounded-lg shadow-sm transition-shadow;
+  background: var(--file-card-bg);
+  border: 1px solid var(--file-card-border);
+}
+
+.markdown-card-split {
+  @apply grid grid-cols-2;
+}
+
+.markdown-editor-textarea {
+  @apply block box-border min-h-40 w-full resize-y border-0 bg-transparent p-4 text-sm outline-none;
+  color: var(--app-text-color);
+  caret-color: var(--app-text-color);
+  font-family: var(--app-font-family);
+  line-height: 1.6;
+}
+
+.markdown-card-split .markdown-editor-textarea {
+  @apply h-full resize-none;
+  border-right: 1px solid var(--file-card-border);
+}
+
+.markdown-preview {
+  @apply min-h-40 overflow-auto p-4 text-sm;
+  color: var(--app-text-color);
+  line-height: 1.65;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  @apply mb-2 mt-3 font-bold;
+}
+
+.markdown-preview h1 {
+  @apply text-2xl;
+}
+
+.markdown-preview h2 {
+  @apply text-xl;
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview pre,
+.markdown-preview blockquote {
+  @apply my-2;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  @apply pl-6;
+}
+
+.markdown-preview code {
+  @apply rounded px-1 py-0.5 text-[0.9em];
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.markdown-preview pre {
+  @apply overflow-auto rounded-md p-3;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.markdown-preview pre code {
+  @apply bg-transparent p-0;
+}
+
+.markdown-preview a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.canvas-card {
+  @apply inline-block max-w-full overflow-auto rounded-lg shadow-sm transition-shadow;
+  background: var(--file-card-bg);
+  border: 1px solid var(--file-card-border);
+}
+
+.canvas-surface {
+  @apply block touch-none select-none outline-none;
+  background: var(--app-bg-color);
+}
+
+.canvas-surface[data-mode="draw"] {
+  cursor: crosshair;
+}
+
+.canvas-surface[data-mode="pan"] {
+  cursor: grab;
+}
+
+.canvas-bg {
+  fill: color-mix(in srgb, var(--app-bg-color) 96%, #3b82f6);
+}
+
+.canvas-object {
+  cursor: move;
+}
+
+.canvas-path-object,
+.canvas-image-object,
+.canvas-file-object,
+.canvas-text-object {
+  pointer-events: auto;
+}
+
+.canvas-drawing-path,
+.canvas-path-object {
+  stroke: #2563eb;
+}
+
+.canvas-drawing-path {
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.canvas-selection-rect {
+  stroke: #2563eb;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: visibleStroke;
+}
+
+.canvas-resize-handle,
+.canvas-rotate-handle {
+  fill: #2563eb;
+  stroke: white;
+  stroke-width: 2;
+  cursor: nwse-resize;
+}
+
+.canvas-rotate-handle {
+  cursor: grab;
+}
+
+.canvas-text-object {
+  @apply h-full w-full resize-none rounded border-0 bg-transparent p-2 outline-none;
+  font-family: var(--app-font-family);
+  line-height: 1.4;
+}
+
+.canvas-file-object {
+  @apply box-border flex h-full w-full items-center gap-2 rounded-lg px-3 py-2 text-sm;
+  background: var(--file-card-bg);
+  border: 1px solid var(--file-card-border);
+  color: var(--app-text-color);
+}
+
+.canvas-file-icon {
+  @apply shrink-0 text-lg;
+}
+
+.canvas-file-name {
+  @apply min-w-0 flex-1 truncate;
+}
+
+.canvas-file-size {
+  @apply shrink-0 text-xs;
+  color: var(--file-size-color);
+}
+
+.markdown-toolbar,
+.canvas-toolbar,
+.canvas-object-toolbar {
+  @apply absolute z-[1000] flex items-center gap-1.5 rounded-lg px-2 py-1.5 shadow-lg backdrop-blur;
+  background: color-mix(in srgb, var(--app-bg-color) 92%, transparent);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dark .markdown-toolbar,
+.dark .canvas-toolbar,
+.dark .canvas-object-toolbar {
+  background: color-mix(in srgb, var(--app-surface-color) 92%, transparent);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.markdown-toolbar-btn,
+.canvas-toolbar-btn,
+.canvas-object-toolbar-btn {
+  @apply inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 transition-colors;
+  color: var(--app-text-color);
+}
+
+.markdown-toolbar-btn:hover,
+.canvas-toolbar-btn:hover,
+.canvas-object-toolbar-btn:hover,
+.markdown-toolbar-btn.is-active,
+.canvas-toolbar-btn.is-active,
+.canvas-object-toolbar-btn.is-active {
+  background: rgba(59, 130, 246, 0.16);
+  color: #2563eb;
+}
+
+.canvas-object-color-picker {
+  @apply mx-0.5;
+}
+
+.dark .markdown-preview code,
+.dark .markdown-preview pre {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .canvas-bg {
+  fill: color-mix(in srgb, var(--app-surface-color) 94%, #3b82f6);
+}

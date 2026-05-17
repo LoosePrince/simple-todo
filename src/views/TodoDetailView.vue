@@ -10,8 +10,10 @@ import { CheckCircle, CircleAlert } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import AdvancedEditor, { type EditorNode } from '../components/AdvancedEditor.vue'
+import AdvancedEditor from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
+import { collectUsedAssetNames, normalizeDocument, stableDocumentJson, stripFileSizes } from '../editor/document'
+import type { EditorNode } from '../editor/types'
 import { useSettingsStore } from '../store/settings'
 import { useTodoStore } from '../store/todo'
 
@@ -36,20 +38,7 @@ const contextMenuRef = ref<HTMLElement | null>(null)
 const EDGE_PAD = 8
 /** 最近一次成功保存时的内容快照，用于判断是否脏与自动保存后更新（不包含 fileSize，文件大小从磁盘读取） */
 const lastSavedJson = ref<string>('')
-/** 从节点树中移除 fileSize，保存/比较时不持久化文件大小 */
-function stripFileSizes(nodes: EditorNode[]): EditorNode[] {
-  return nodes.map((node) => {
-    if (node.type === 'file') {
-      const { fileSize: _, ...rest } = node
-      return rest as EditorNode
-    }
-    if ('children' in node && Array.isArray(node.children)) {
-      return { ...node, children: stripFileSizes(node.children) }
-    }
-    return node
-  })
-}
-const isDirty = computed(() => JSON.stringify(stripFileSizes(blocks.value)) !== lastSavedJson.value)
+const isDirty = computed(() => stableDocumentJson(blocks.value) !== lastSavedJson.value)
 
 watch(contextMenu, (val) => {
   if (!val) return
@@ -75,7 +64,7 @@ async function loadDetail() {
   })
   try {
     const jsonContent = JSON.parse(content)
-    blocks.value = Array.isArray(jsonContent) ? (jsonContent as EditorNode[]) : []
+    blocks.value = Array.isArray(jsonContent) ? normalizeDocument(jsonContent as EditorNode[]) : []
   } catch {
     blocks.value = []
   }
@@ -83,7 +72,7 @@ async function loadDetail() {
     blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
   }
   await backfillFileSizes()
-  lastSavedJson.value = JSON.stringify(stripFileSizes(blocks.value))
+  lastSavedJson.value = stableDocumentJson(blocks.value)
 }
 
 let unlistenDetail: (() => void) | null = null
@@ -139,7 +128,6 @@ async function backfillFileSizes() {
   const base = await join(settingsStore.config.data_path, todoItem.folder_name)
   
   async function processNode(node: EditorNode): Promise<EditorNode> {
-    // 处理文件节点
     if (node.type === 'file' && node.assetPath) {
       try {
         const fullPath = await join(base, node.assetPath)
@@ -149,8 +137,21 @@ async function backfillFileSizes() {
         return node
       }
     }
+
+    if (node.type === 'canvas') {
+      const objects = await Promise.all(node.objects.map(async (object) => {
+        if (object.kind !== 'file' || !object.assetPath) return object
+        try {
+          const fullPath = await join(base, object.assetPath)
+          const info = await stat(fullPath)
+          return { ...object, fileSize: info.size }
+        } catch {
+          return object
+        }
+      }))
+      return { ...node, objects }
+    }
     
-    // 递归处理包含子节点的节点（折叠块、任务列表等）
     if ('children' in node && Array.isArray(node.children)) {
       const processedChildren = await Promise.all(node.children.map(processNode))
       return { ...node, children: processedChildren }
@@ -160,36 +161,6 @@ async function backfillFileSizes() {
   }
   
   blocks.value = await Promise.all(blocks.value.map(processNode))
-}
-
-function collectUsedAssetNames(nodes: EditorNode[]): Set<string> {
-  const names = new Set<string>()
-  
-  function traverse(nodes: EditorNode[]) {
-    for (const node of nodes) {
-      // 收集图片和文件的资源名称
-      if (node.type === 'image' || node.type === 'file') {
-        if (node.assetPath) {
-          const name = node.assetPath.split(/[/\\]/).pop()
-          if (name) names.add(name)
-        }
-        if (node.url) {
-          try {
-            const segs = decodeURIComponent(node.url).split(/[/\\]/)
-            if (segs.length) names.add(segs[segs.length - 1])
-          } catch (_) {}
-        }
-      }
-      
-      // 递归遍历子节点（包括折叠块、任务列表、列表项等）
-      if ('children' in node && Array.isArray(node.children)) {
-        traverse(node.children)
-      }
-    }
-  }
-  
-  traverse(nodes)
-  return names
 }
 
 function asArrayBuffer(x: ArrayBuffer | Uint8Array): ArrayBuffer {
@@ -210,6 +181,67 @@ function getExt(pathOrName: string): string {
   return m ? m[1].toLowerCase() : 'bin'
 }
 
+type SavedAsset = {
+  url: string
+  assetPath: string
+  targetPath: string
+  fileName: string
+  fileSize: number
+}
+
+async function getAssetsDir(): Promise<string> {
+  if (!todoItem) return ''
+  return join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
+}
+
+async function saveAssetData(data: ArrayBuffer | Uint8Array, sourceName: string, displayName = sourceName.split(/[\\/]/).pop() || 'file'): Promise<SavedAsset> {
+  if (!todoItem) throw new Error('Todo not found')
+  await ensureAssetsDir()
+  const buffer = asArrayBuffer(data)
+  const hash = await sha256Hex(buffer)
+  const ext = getExt(sourceName)
+  const targetFileName = `${hash}.${ext}`
+  const assetPath = `assets/${targetFileName}`
+  const assetsDir = await getAssetsDir()
+  const targetPath = await join(assetsDir, targetFileName)
+
+  let fileExists = false
+  try {
+    await stat(targetPath)
+    fileExists = true
+  } catch {
+    fileExists = false
+  }
+
+  if (!fileExists) {
+    await writeFile(targetPath, data instanceof Uint8Array ? data : new Uint8Array(buffer))
+    try {
+      await stat(targetPath)
+    } catch (verifyErr) {
+      throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
+    }
+  }
+
+  return {
+    url: convertFileSrc(targetPath),
+    assetPath,
+    targetPath,
+    fileName: displayName,
+    fileSize: buffer.byteLength
+  }
+}
+
+async function saveAssetFromPath(filePath: string): Promise<SavedAsset> {
+  const fileData = await readFile(filePath)
+  const displayName = filePath.split(/[\\/]/).pop() || 'file'
+  return saveAssetData(fileData, filePath, displayName)
+}
+
+async function saveAssetFromFile(file: File): Promise<SavedAsset> {
+  const arrayBuffer = await file.arrayBuffer()
+  return saveAssetData(arrayBuffer, file.name || 'file', file.name || 'file')
+}
+
 const handleImageUpload = async () => {
   try {
     const selected = await open({
@@ -217,41 +249,12 @@ const handleImageUpload = async () => {
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
     })
     if (!selected || !todoItem) return
-    await ensureAssetsDir()
-    const filePath = selected as string
-    const fileData = await readFile(filePath)
-    const hash = await sha256Hex(asArrayBuffer(fileData))
-    const ext = getExt(filePath)
-    const targetFileName = `${hash}.${ext}`
-    const assetPath = `assets/${targetFileName}`
-    const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
-    const targetPath = await join(assetsDir, targetFileName)
-    
-    // 检查文件是否已存在，如果不存在则写入
-    let fileExists = false
-    try {
-      await stat(targetPath)
-      fileExists = true
-    } catch {
-      // 文件不存在，需要写入
-      fileExists = false
-    }
-    
-    if (!fileExists) {
-      await writeFile(targetPath, fileData)
-      // 验证文件是否真的被写入了
-      try {
-        await stat(targetPath)
-      } catch (verifyErr) {
-        throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
-      }
-    }
-    
+    const asset = await saveAssetFromPath(selected as string)
     const newBlock: EditorNode = {
       type: 'image',
       id: crypto.randomUUID(),
-      url: convertFileSrc(targetPath),
-      assetPath,
+      url: asset.url,
+      assetPath: asset.assetPath,
       widthPercent: 100,
       align: 'left'
     }
@@ -267,7 +270,6 @@ const handleImageUpload = async () => {
 const performSave = async (silent = false) => {
   if (!todoItem) return
   editorRef.value?.saveSelection?.()
-  if (editorRef.value) editorRef.value.handleInput()
   const used = collectUsedAssetNames(blocks.value)
   const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
   try {
@@ -280,13 +282,13 @@ const performSave = async (silent = false) => {
       }
     }
   } catch (_) {}
-  const toSave = stripFileSizes(blocks.value)
+  const toSave = stripFileSizes(normalizeDocument(blocks.value))
   await invoke('save_todo_detail', {
     dataPath: settingsStore.config.data_path,
     folderName: todoItem.folder_name,
     content: JSON.stringify(toSave)
   })
-  lastSavedJson.value = JSON.stringify(toSave)
+  lastSavedJson.value = stableDocumentJson(toSave)
   if (!silent) ElMessage.success(t('common.saveSuccess') || '已保存')
   nextTick(() => editorRef.value?.restoreSelection?.())
 }
@@ -300,7 +302,7 @@ watch(blocks, () => {
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null
-    if (JSON.stringify(stripFileSizes(blocks.value)) !== lastSavedJson.value) {
+    if (stableDocumentJson(blocks.value) !== lastSavedJson.value) {
       performSave(true)
     }
   }, AUTO_SAVE_DEBOUNCE_MS)
@@ -325,44 +327,14 @@ const handleFileUpload = async () => {
   try {
     const selected = await open({ multiple: false })
     if (!selected || !todoItem) return
-    await ensureAssetsDir()
-    const filePath = selected as string
-    const displayName = filePath.split(/[\\/]/).pop() || 'file'
-    const fileData = await readFile(filePath)
-    const hash = await sha256Hex(asArrayBuffer(fileData))
-    const ext = getExt(filePath)
-    const targetFileName = `${hash}.${ext}`
-    const assetPath = `assets/${targetFileName}`
-    const assetsDir = await join(settingsStore.config.data_path, todoItem.folder_name, 'assets')
-    const targetPath = await join(assetsDir, targetFileName)
-    
-    // 检查文件是否已存在，如果不存在则写入
-    let fileExists = false
-    try {
-      await stat(targetPath)
-      fileExists = true
-    } catch {
-      // 文件不存在，需要写入
-      fileExists = false
-    }
-    
-    if (!fileExists) {
-      await writeFile(targetPath, fileData)
-      // 验证文件是否真的被写入了
-      try {
-        await stat(targetPath)
-      } catch (verifyErr) {
-        throw new Error(`文件写入失败，无法验证文件是否存在: ${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
-      }
-    }
-    
+    const asset = await saveAssetFromPath(selected as string)
     const newBlock: EditorNode = {
       type: 'file',
       id: crypto.randomUUID(),
-      url: convertFileSrc(targetPath),
-      fileName: displayName,
-      assetPath,
-      fileSize: fileData.byteLength
+      url: asset.url,
+      fileName: asset.fileName,
+      assetPath: asset.assetPath,
+      fileSize: asset.fileSize
     }
     editorRef.value?.insertNodesAtSelection?.(newBlock)
   } catch (e) {
@@ -380,8 +352,53 @@ function handleInsertCode() {
   editorRef.value?.insertCodeBlock?.()
 }
 
+function handleInsertMarkdown() {
+  editorRef.value?.insertMarkdownBlock?.()
+}
+
+function handleInsertCanvas() {
+  editorRef.value?.insertCanvasBlock?.()
+}
+
 function handleInsertFold() {
   editorRef.value?.insertFoldBlock?.()
+}
+
+async function handleCanvasImageUpload(payload: { canvasId: string }) {
+  try {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+    })
+    if (!selected || !todoItem) return
+    const asset = await saveAssetFromPath(selected as string)
+    editorRef.value?.insertCanvasImageObject?.(payload.canvasId, {
+      url: asset.url,
+      assetPath: asset.assetPath
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    ElMessage.error(`上传失败: ${msg}`)
+    console.error('画布图片上传错误:', e)
+  }
+}
+
+async function handleCanvasFileUpload(payload: { canvasId: string }) {
+  try {
+    const selected = await open({ multiple: false })
+    if (!selected || !todoItem) return
+    const asset = await saveAssetFromPath(selected as string)
+    editorRef.value?.insertCanvasFileObject?.(payload.canvasId, {
+      url: asset.url,
+      assetPath: asset.assetPath,
+      fileName: asset.fileName,
+      fileSize: asset.fileSize
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    ElMessage.error(`上传失败: ${msg}`)
+    console.error('画布文件上传错误:', e)
+  }
 }
 
 async function getAssetFullPath(assetPath: string): Promise<string> {
@@ -630,6 +647,8 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
         @insert-file="handleFileUpload"
         @insert-task="handleInsertTask"
         @insert-code="handleInsertCode"
+        @insert-markdown="handleInsertMarkdown"
+        @insert-canvas="handleInsertCanvas"
         @insert-fold="handleInsertFold"
       />
       <el-scrollbar class="editor-scroll">
@@ -639,6 +658,8 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
           @contextmenu="onAssetContextmenu"
           @open-asset="onOpenAsset"
           @paste-files="handleEditorPasteFiles"
+          @upload-canvas-image="handleCanvasImageUpload"
+          @upload-canvas-file="handleCanvasFileUpload"
         />
       </el-scrollbar>
     </div>

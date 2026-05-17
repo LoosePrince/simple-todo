@@ -1,9 +1,10 @@
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), tailwindcss()],
   // 打包后用相对路径，否则 Tauri 加载 dist 时脚本/资源可能 404 导致白屏
   base: process.env.NODE_ENV === 'production' ? './' : '/',
 
