@@ -1,7 +1,7 @@
 {
   "identifier": "fs-capability",
   "description": "Allow reading and writing files for todo data and user-selected paths.",
-  "windows": ["main", "main-*"],
+  "windows": ["main", "main-*", "quick-record-*"],
   "permissions": [
     "fs:default",
     "fs:allow-read-file",

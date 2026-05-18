@@ -1,7 +1,7 @@
 {
   "identifier": "window-controls",
-  "description": "Allow basic window operations and path utilities for the main window.",
-  "windows": ["main", "main-*"],
+  "description": "Allow basic window operations and path utilities for all app windows.",
+  "windows": ["main", "main-*", "quick-record-*"],
   "permissions": [
     "core:window:default",
     "core:window:allow-minimize",

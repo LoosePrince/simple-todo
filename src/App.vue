@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { listen } from '@tauri-apps/api/event'
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import { useSettingsStore } from './store/settings'
 import { useTodoStore } from './store/todo'
@@ -8,6 +8,7 @@ import { useTodoStore } from './store/todo'
 const settingsStore = useSettingsStore()
 const todoStore = useTodoStore()
 const unlistenFns: Array<() => void> = []
+const isQuickRecord = computed(() => window.location.hash.startsWith('#/quick-record'))
 
 function preventContextMenu(e: Event) {
   e.preventDefault()
@@ -35,8 +36,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-wrapper" :style="settingsStore.globalStyles">
-    <TitleBar />
+  <div class="app-wrapper" :class="{ 'is-quick-record': isQuickRecord }" :style="settingsStore.globalStyles">
+    <TitleBar v-if="!isQuickRecord" />
     <div class="app-content">
       <router-view></router-view>
     </div>

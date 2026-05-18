@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,6 +30,12 @@ struct AppConfig {
     text_color_dark: String,
     #[serde(default)]
     launch_at_login: bool,
+    #[serde(default = "default_quick_record_shortcut")]
+    quick_record_shortcut: String,
+}
+
+fn default_quick_record_shortcut() -> String {
+    "Ctrl+Shift+N".to_string()
 }
 
 fn default_config(handle: &tauri::AppHandle) -> AppConfig {
@@ -41,6 +48,7 @@ fn default_config(handle: &tauri::AppHandle) -> AppConfig {
         text_color_light: "#333333".to_string(),
         text_color_dark: "#e5e5e5".to_string(),
         launch_at_login: false,
+        quick_record_shortcut: default_quick_record_shortcut(),
     }
 }
 
@@ -66,6 +74,7 @@ fn save_app_config(handle: tauri::AppHandle, config: AppConfig) -> Result<(), St
     let config_path = config_dir.join("config.json");
     let content = serde_json::to_string(&config).map_err(|e| e.to_string())?;
     fs::write(config_path, content).map_err(|e| e.to_string())?;
+    register_quick_record_shortcut(&handle, &config.quick_record_shortcut).map_err(|e| e.to_string())?;
     let _ = handle.emit("config-changed", ());
     Ok(())
 }
@@ -308,6 +317,32 @@ fn create_new_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     Ok(())
 }
 
+fn open_quick_record_window(app: &tauri::AppHandle) -> Result<(), String> {
+    let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let label = format!("quick-record-{}", n);
+    WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html#/quick-record".into()))
+        .title("快捷记录")
+        .inner_size(260.0, 180.0)
+        .min_inner_size(260.0, 180.0)
+        .decorations(false)
+        .always_on_top(true)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn register_quick_record_shortcut(app: &tauri::AppHandle, shortcut_text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let shortcut = shortcut_text.parse::<Shortcut>()?;
+    let _ = app.global_shortcut().unregister_all();
+    app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
+        if event.state() == ShortcutState::Pressed {
+            let _ = open_quick_record_window(app);
+        }
+    })?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -318,11 +353,17 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
             }
         }))
+        .setup(|app| {
+            let config = get_app_config(app.handle().clone());
+            register_quick_record_shortcut(app.handle(), &config.quick_record_shortcut)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_app_config,
             save_app_config,

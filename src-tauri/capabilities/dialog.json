@@ -1,6 +1,6 @@
 {
   "identifier": "dialog-capability",
   "description": "Allow opening file and directory picker dialogs.",
-  "windows": ["main", "main-*"],
+  "windows": ["main", "main-*", "quick-record-*"],
   "permissions": ["dialog:allow-open", "dialog:default"]
 }

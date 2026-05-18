@@ -1,7 +1,7 @@
 {
   "identifier": "opener-capability",
   "description": "Allow opening files in default app, revealing in file explorer, and opening project URL.",
-  "windows": ["main", "main-*"],
+  "windows": ["main", "main-*", "quick-record-*"],
   "permissions": [
     "opener:allow-reveal-item-in-dir",
     { "identifier": "opener:allow-open-path", "allow": [{ "path": "**" }] },
