@@ -2,7 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use std::fs;
 use std::path::Path;
@@ -323,7 +327,7 @@ fn open_quick_record_window(app: &tauri::AppHandle) -> Result<(), String> {
     WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html#/quick-record".into()))
         .title("快捷记录")
         .inner_size(260.0, 180.0)
-        .min_inner_size(260.0, 180.0)
+        .min_inner_size(160.0, 180.0)
         .decorations(false)
         .always_on_top(true)
         .resizable(true)
@@ -340,6 +344,49 @@ fn register_quick_record_shortcut(app: &tauri::AppHandle, shortcut_text: &str) -
             let _ = open_quick_record_window(app);
         }
     })?;
+    Ok(())
+}
+
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("简易代办")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
     Ok(())
 }
 
@@ -360,6 +407,16 @@ fn main() {
             }
         }))
         .setup(|app| {
+            setup_tray(app)?;
+            if let Some(window) = app.get_webview_window("main") {
+                let window_to_hide = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_to_hide.hide();
+                    }
+                });
+            }
             let config = get_app_config(app.handle().clone());
             register_quick_record_shortcut(app.handle(), &config.quick_record_shortcut)?;
             Ok(())
