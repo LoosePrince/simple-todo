@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { invoke } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { join } from '@tauri-apps/api/path'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { mkdir, stat, writeFile } from '@tauri-apps/plugin-fs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Minus, Pin, X } from 'lucide-vue-next'
 import { onMounted, onUnmounted, ref } from 'vue'
 import AdvancedEditor from '../components/AdvancedEditor.vue'
+import EditorToolbar from '../components/EditorToolbar.vue'
 import { normalizeDocument, stripFileSizes } from '../editor/document'
+import { detectCodeLanguage, isLikelyCodePaste, normalizePastedText } from '../editor/paste'
 import type { EditorNode } from '../editor/types'
 import { useSettingsStore } from '../store/settings'
 import { useTodoStore } from '../store/todo'
@@ -18,6 +22,16 @@ const blocks = ref<EditorNode[]>([{ type: 'p', id: crypto.randomUUID(), children
 const editorRef = ref<InstanceType<typeof AdvancedEditor> | null>(null)
 const saving = ref(false)
 const pinned = ref(true)
+const tempFolderName = ref('')
+const savedAsFormal = ref(false)
+
+type SavedAsset = {
+  url: string
+  assetPath: string
+  targetPath: string
+  fileName: string
+  fileSize: number
+}
 
 async function ensureDataReady() {
   if (!settingsStore.config.data_path) {
@@ -25,6 +39,127 @@ async function ensureDataReady() {
   }
   if (!todoStore.dataPath) {
     await todoStore.loadTodos(settingsStore.config.data_path)
+  }
+}
+
+function asArrayBuffer(x: ArrayBuffer | Uint8Array): ArrayBuffer {
+  if (x instanceof ArrayBuffer) return x
+  return x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength) as ArrayBuffer
+}
+
+async function sha256Hex(data: ArrayBuffer): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16)
+}
+
+function getExt(pathOrName: string, fallback = 'bin'): string {
+  const m = pathOrName.match(/\.([a-zA-Z0-9]+)$/)
+  return m ? m[1].toLowerCase() : fallback
+}
+
+async function ensureTempFolder(): Promise<string> {
+  await ensureDataReady()
+  if (!tempFolderName.value) {
+    tempFolderName.value = await invoke<string>('create_todo_folder', { dataPath: settingsStore.config.data_path })
+  }
+  return tempFolderName.value
+}
+
+async function ensureTempAssetsDir(): Promise<string> {
+  const folderName = await ensureTempFolder()
+  const assetsDir = await join(settingsStore.config.data_path, folderName, 'assets')
+  await mkdir(assetsDir, { recursive: true })
+  return assetsDir
+}
+
+async function saveAssetFromFile(file: File): Promise<SavedAsset> {
+  const assetsDir = await ensureTempAssetsDir()
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = asArrayBuffer(arrayBuffer)
+  const isImage = file.type.startsWith('image/')
+  const fallbackExt = isImage ? (file.type.split('/')[1] || 'png').toLowerCase() : 'bin'
+  const ext = getExt(file.name || '', fallbackExt)
+  const hash = await sha256Hex(buffer)
+  const targetFileName = `${hash}.${ext}`
+  const assetPath = `assets/${targetFileName}`
+  const targetPath = await join(assetsDir, targetFileName)
+
+  let fileExists = false
+  try {
+    await stat(targetPath)
+    fileExists = true
+  } catch {
+    fileExists = false
+  }
+
+  if (!fileExists) {
+    await writeFile(targetPath, new Uint8Array(buffer))
+    await stat(targetPath)
+  }
+
+  return {
+    url: convertFileSrc(targetPath),
+    assetPath,
+    targetPath,
+    fileName: file.name || 'file',
+    fileSize: buffer.byteLength
+  }
+}
+
+async function handleEditorPasteFiles(payload: { files: File[]; text: string }) {
+  const newNodes: EditorNode[] = []
+
+  try {
+    for (const file of payload.files || []) {
+      const asset = await saveAssetFromFile(file)
+      if (file.type.startsWith('image/')) {
+        newNodes.push({
+          type: 'image',
+          id: crypto.randomUUID(),
+          url: asset.url,
+          assetPath: asset.assetPath,
+          widthPercent: 100,
+          align: 'left'
+        })
+      } else {
+        newNodes.push({
+          type: 'file',
+          id: crypto.randomUUID(),
+          url: asset.url,
+          fileName: asset.fileName,
+          assetPath: asset.assetPath,
+          fileSize: asset.fileSize
+        })
+      }
+    }
+
+    if (payload.text && payload.text.trim().length > 0) {
+      const normalized = normalizePastedText(payload.text)
+      if (isLikelyCodePaste(normalized)) {
+        newNodes.push({
+          type: 'code',
+          id: crypto.randomUUID(),
+          content: normalized,
+          language: detectCodeLanguage(normalized)
+        })
+      } else {
+        for (const line of normalized.split('\n')) {
+          newNodes.push({
+            type: 'p',
+            id: crypto.randomUUID(),
+            children: line ? [{ type: 'text', value: line }] : []
+          })
+        }
+      }
+    }
+
+    if (newNodes.length) editorRef.value?.insertNodesAtSelection?.(newNodes)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    ElMessage.error(`粘贴失败: ${message}`)
   }
 }
 
@@ -36,7 +171,7 @@ async function saveAsFormalCode() {
   saving.value = true
   try {
     await ensureDataReady()
-    const folderName = await invoke<string>('create_todo_folder', { dataPath: settingsStore.config.data_path })
+    const folderName = tempFolderName.value || await invoke<string>('create_todo_folder', { dataPath: settingsStore.config.data_path })
     const item = {
       id: crypto.randomUUID(),
       title,
@@ -51,6 +186,7 @@ async function saveAsFormalCode() {
       folderName,
       content: JSON.stringify(content)
     })
+    savedAsFormal.value = true
     ElMessage.success('已保存为正式代码')
     await appWindow.close()
   } catch (error) {
@@ -112,6 +248,45 @@ async function togglePin() {
   await appWindow.setAlwaysOnTop(pinned.value)
 }
 
+function onToolbarMouseDown() {
+  editorRef.value?.saveSelection?.()
+}
+
+function handleCommand(command: string, value?: string) {
+  editorRef.value?.saveSelection?.()
+  editorRef.value?.execCommand(command, value)
+}
+
+function handleInsertTask() {
+  editorRef.value?.insertTaskListAtSelection?.()
+}
+
+function handleInsertCode() {
+  editorRef.value?.insertCodeBlock?.()
+}
+
+function handleInsertMarkdown() {
+  editorRef.value?.insertMarkdownBlock?.()
+}
+
+function handleInsertCanvas() {
+  editorRef.value?.insertCanvasBlock?.()
+}
+
+function handleInsertFold() {
+  editorRef.value?.insertFoldBlock?.()
+}
+
+async function cleanupTempFolder() {
+  if (!tempFolderName.value || savedAsFormal.value) return
+  try {
+    await invoke('delete_todo_folder', {
+      dataPath: settingsStore.config.data_path,
+      folderName: tempFolderName.value
+    })
+  } catch (_) {}
+}
+
 onMounted(async () => {
   await settingsStore.applySettings()
   await appWindow.setAlwaysOnTop(true)
@@ -120,6 +295,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  void cleanupTempFolder()
 })
 </script>
 
@@ -143,8 +319,20 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div class="quick-hidden-toolbar" aria-hidden="true">
+      <EditorToolbar
+        @mousedown="onToolbarMouseDown"
+        @command="handleCommand"
+        @insert-task="handleInsertTask"
+        @insert-code="handleInsertCode"
+        @insert-markdown="handleInsertMarkdown"
+        @insert-canvas="handleInsertCanvas"
+        @insert-fold="handleInsertFold"
+      />
+    </div>
+
     <div class="quick-editor-shell">
-      <AdvancedEditor ref="editorRef" v-model="blocks" />
+      <AdvancedEditor ref="editorRef" v-model="blocks" @paste-files="handleEditorPasteFiles" />
     </div>
   </div>
 </template>
@@ -214,6 +402,19 @@ onUnmounted(() => {
 .quick-control:disabled {
   cursor: wait;
   opacity: 0.5;
+}
+
+.quick-hidden-toolbar {
+  position: fixed;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.quick-hidden-toolbar :deep(.editor-toolbar) {
+  display: none;
 }
 
 .quick-editor-shell {

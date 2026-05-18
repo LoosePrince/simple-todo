@@ -13,6 +13,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AdvancedEditor from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import { collectUsedAssetNames, normalizeDocument, stableDocumentJson, stripFileSizes } from '../editor/document'
+import { detectCodeLanguage, isLikelyCodePaste, normalizePastedText } from '../editor/paste'
 import type { EditorNode } from '../editor/types'
 import { useSettingsStore } from '../store/settings'
 import { useTodoStore } from '../store/todo'
@@ -602,14 +603,23 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
     }
 
     if (text && text.trim().length > 0) {
-      const normalized = text.replace(/\r\n/g, '\n')
-      const lines = normalized.split('\n')
-      for (const line of lines) {
+      const normalized = normalizePastedText(text)
+      if (isLikelyCodePaste(normalized)) {
         newNodes.push({
-          type: 'p',
+          type: 'code',
           id: crypto.randomUUID(),
-          children: line ? [{ type: 'text', value: line }] : []
+          content: normalized,
+          language: detectCodeLanguage(normalized)
         })
+      } else {
+        const lines = normalized.split('\n')
+        for (const line of lines) {
+          newNodes.push({
+            type: 'p',
+            id: crypto.randomUUID(),
+            children: line ? [{ type: 'text', value: line }] : []
+          })
+        }
       }
     }
 

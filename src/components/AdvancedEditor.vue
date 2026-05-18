@@ -25,6 +25,7 @@ import {
   updateNodeById
 } from '../editor/document'
 import { CODE_LANGUAGES, DataEditorNode, attrToPath, findTextContainer, findTextPosition, getFloatingRect, pathToAttr, textOffsetInContainer, type SpecialBlockKind } from '../editor/render'
+import { isLikelyCodePaste, normalizePastedText } from '../editor/paste'
 import type { EditorNode, InlineMarks } from '../editor/types'
 import {
   convertTextBlockToTaskList,
@@ -458,7 +459,14 @@ function handlePaste(payload: { event: ClipboardEvent; path: EditorPath }) {
     emit('paste-files', { files, text })
     return
   }
-  if (text) replaceSelectionWithText(text.replace(/\r\n/g, '\n'))
+  if (text) {
+    const normalized = normalizePastedText(text)
+    if (isLikelyCodePaste(normalized)) {
+      emit('paste-files', { files: [], text: normalized })
+      return
+    }
+    replaceSelectionWithText(normalized)
+  }
 }
 
 function handleCompositionStart(path: EditorPath) {
