@@ -8,7 +8,10 @@
         "cancel": "取消",
         "settings": "设置",
         "about": "关于",
-        "saveSuccess": "保存成功"
+        "saveSuccess": "保存成功",
+        "pasteFailed": "粘贴失败",
+        "saveFailed": "保存失败",
+        "search": "查找"
     },
     "todo": {
         "listTitle": "代办事项",
@@ -17,6 +20,7 @@
         "taskProgress": "任务进度",
         "taskLoadError": "加载任务失败",
         "taskSaveError": "保存失败",
+        "emptyTaskText": "(无文字)",
         "deleteConfirmTitle": "删除确认",
         "deleteConfirmMessage": "确认删除代办「{title}」吗？",
         "deleteSuccess": "删除成功"
@@ -45,7 +49,15 @@
         "orphanTodosDeleteAll": "一键删除全部",
         "orphanTodosDeleteConfirm": "确认删除所有未知待办文件夹吗？此操作不可恢复。",
         "orphanTodosDeleteSuccess": "删除成功",
-        "orphanTodosDeleteError": "删除失败"
+        "orphanTodosDeleteError": "删除失败",
+        "shortcuts": "快捷键",
+        "manageShortcuts": "管理快捷键",
+        "textColorLight": "浅色模式",
+        "textColorDark": "深色模式",
+        "orphanTodosFindError": "查找失败",
+        "orphanHelpTitle": "功能说明",
+        "orphanHelpDesc1": "“查找未知代办”会扫描当前数据目录下所有代办文件夹，找出那些已经不在代办列表中显示、但仍然存在于磁盘上的“孤立”文件夹。",
+        "orphanHelpDesc2": "你可以通过这个功能查看这些未知代办占用的空间，并在确认不再需要后进行清理，以减少磁盘占用、保持数据目录整洁。"
     },
     "editor": {
         "toolbarParagraph": "正文",
@@ -86,7 +98,8 @@
         "imageWidthPercent": "宽度%",
         "bubbleBold": "加粗",
         "bubbleItalic": "斜体",
-        "bubbleColor": "文字颜色"
+        "bubbleColor": "文字颜色",
+        "foldDefaultTitle": "折叠内容"
     },
     "blockEditor": {
         "addBlock": "添加块",
@@ -104,7 +117,36 @@
         "unknownFile": "未知文件"
     },
     "titleBar": {
-        "newWindow": "新窗口"
+        "appTitle": "简易代办",
+        "newWindow": "新窗口",
+        "pin": "窗口置顶",
+        "minimize": "最小化",
+        "maximize": "最大化",
+        "close": "关闭"
+    },
+    "quickRecord": {
+        "pin": "窗口置顶",
+        "save": "保存",
+        "minimize": "最小化",
+        "closeWithoutSaving": "关闭，不保存",
+        "savedAsFormal": "已保存为正式代码",
+        "promptTitle": "保存快捷记录",
+        "promptCodeName": "请输入代码名",
+        "codeNamePlaceholder": "代码名",
+        "codeNameRequired": "代码名不能为空",
+        "cacheFailed": "缓存快捷记录失败"
+    },
+    "shortcuts": {
+        "title": "快捷键",
+        "openQuickRecord": "打开快捷记录",
+        "openQuickRecordDesc": "按下后创建一个新的快捷记录小窗口。",
+        "toggleQuickRecord": "快速隐藏/显示快捷记录",
+        "toggleQuickRecordDesc": "按下后在隐藏所有快捷记录和恢复隐藏前的快捷记录窗口之间切换。",
+        "recording": "请按下新的快捷键，Esc 取消",
+        "duplicate": "快捷键已被“{title}”占用",
+        "updated": "快捷键已更新",
+        "bindFailed": "快捷键绑定失败",
+        "needModifier": "快捷键至少需要包含 Ctrl、Alt、Shift 或 Meta"
     },
     "contextMenu": {
         "openFileLocation": "打开文件位置",

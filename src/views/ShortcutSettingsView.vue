@@ -3,9 +3,11 @@ import { ElMessage } from 'element-plus'
 import { ChevronLeft } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '../store/settings'
 
 const router = useRouter()
+const { t } = useI18n()
 const settingsStore = useSettingsStore()
 const recordingTarget = ref<keyof ShortcutFields | null>(null)
 
@@ -16,22 +18,22 @@ type ShortcutFields = {
 
 type ShortcutItem = {
   key: keyof ShortcutFields
-  title: string
-  description: string
+  titleKey: string
+  descriptionKey: string
   fallback: string
 }
 
 const shortcutItems: ShortcutItem[] = [
   {
     key: 'quick_record_shortcut',
-    title: '打开快捷记录',
-    description: '按下后创建一个新的快捷记录小窗口。',
+    titleKey: 'shortcuts.openQuickRecord',
+    descriptionKey: 'shortcuts.openQuickRecordDesc',
     fallback: 'Ctrl+Shift+N'
   },
   {
     key: 'hide_quick_record_shortcut',
-    title: '快速隐藏/显示快捷记录',
-    description: '按下后在隐藏所有快捷记录和打开一个快捷记录窗口之间切换。',
+    titleKey: 'shortcuts.toggleQuickRecord',
+    descriptionKey: 'shortcuts.toggleQuickRecordDesc',
     fallback: 'Ctrl+Shift+H'
   }
 ]
@@ -60,16 +62,16 @@ function startRecording(key: keyof ShortcutFields) {
 async function saveShortcut(key: keyof ShortcutFields, shortcut: string) {
   const duplicate = shortcutItems.find(item => item.key !== key && getShortcutValue(item) === shortcut)
   if (duplicate) {
-    ElMessage.warning(`快捷键已被“${duplicate.title}”占用`)
+    ElMessage.warning(t('shortcuts.duplicate', { title: t(duplicate.titleKey) }))
     return
   }
 
   settingsStore.config[key] = shortcut
   try {
     await settingsStore.saveConfig()
-    ElMessage.success('快捷键已更新')
+    ElMessage.success(t('shortcuts.updated'))
   } catch (e) {
-    ElMessage.error(`快捷键绑定失败: ${e instanceof Error ? e.message : String(e)}`)
+    ElMessage.error(`${t('shortcuts.bindFailed')}: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 
@@ -92,7 +94,7 @@ function onShortcutKeydown(event: KeyboardEvent) {
   const key = normalizeShortcutKey(event.key)
   if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return
   if (modifiers.length === 0) {
-    ElMessage.warning('快捷键至少需要包含 Ctrl、Alt、Shift 或 Meta')
+    ElMessage.warning(t('shortcuts.needModifier'))
     return
   }
 
@@ -105,18 +107,18 @@ function onShortcutKeydown(event: KeyboardEvent) {
 <template>
   <div class="shortcuts-view">
     <div class="header">
-      <h2>快捷键</h2>
+      <h2>{{ t('shortcuts.title') }}</h2>
       <el-button @click="router.back()">
         <ChevronLeft :size="16" style="margin-right: 4px" />
-        返回
+        {{ t('common.back') }}
       </el-button>
     </div>
 
     <div class="shortcut-list">
       <div v-for="item in shortcutItems" :key="item.key" class="shortcut-card">
         <div class="shortcut-info">
-          <div class="shortcut-title">{{ item.title }}</div>
-          <div class="shortcut-desc">{{ item.description }}</div>
+          <div class="shortcut-title">{{ t(item.titleKey) }}</div>
+          <div class="shortcut-desc">{{ t(item.descriptionKey) }}</div>
         </div>
         <button
           type="button"
@@ -125,7 +127,7 @@ function onShortcutKeydown(event: KeyboardEvent) {
           @click="startRecording(item.key)"
           @keydown="onShortcutKeydown"
         >
-          {{ recordingTarget === item.key ? '请按下新的快捷键，Esc 取消' : getShortcutValue(item) }}
+          {{ recordingTarget === item.key ? t('shortcuts.recording') : getShortcutValue(item) }}
         </button>
       </div>
     </div>

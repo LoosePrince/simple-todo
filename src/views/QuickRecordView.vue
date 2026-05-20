@@ -7,6 +7,7 @@ import { mkdir, stat, writeFile } from '@tauri-apps/plugin-fs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Minus, Pin, X } from 'lucide-vue-next'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AdvancedEditor from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import { normalizeDocument, stripFileSizes } from '../editor/document'
@@ -16,6 +17,7 @@ import { useSettingsStore } from '../store/settings'
 import { useTodoStore } from '../store/todo'
 
 const appWindow = getCurrentWindow()
+const { t } = useI18n()
 const settingsStore = useSettingsStore()
 const todoStore = useTodoStore()
 
@@ -180,7 +182,7 @@ async function handleEditorPasteFiles(payload: { files: File[]; text: string }) 
     if (newNodes.length) editorRef.value?.insertNodesAtSelection?.(newNodes)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    ElMessage.error(`粘贴失败: ${message}`)
+    ElMessage.error(`${t('common.pasteFailed')}: ${message}`)
   }
 }
 
@@ -208,11 +210,11 @@ async function saveAsFormalCode() {
       content: JSON.stringify(content)
     })
     savedAsFormal.value = true
-    ElMessage.success('已保存为正式代码')
+    ElMessage.success(t('quickRecord.savedAsFormal'))
     await appWindow.close()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    ElMessage.error(`保存失败: ${message}`)
+    ElMessage.error(`${t('common.saveFailed')}: ${message}`)
   } finally {
     saving.value = false
   }
@@ -220,12 +222,12 @@ async function saveAsFormalCode() {
 
 async function promptCodeName(): Promise<string> {
   try {
-    const result = await ElMessageBox.prompt('请输入代码名', '保存快捷记录', {
-      inputPlaceholder: '代码名',
+    const result = await ElMessageBox.prompt(t('quickRecord.promptCodeName'), t('quickRecord.promptTitle'), {
+      inputPlaceholder: t('quickRecord.codeNamePlaceholder'),
       inputValue: '',
-      inputValidator: (value) => value.trim().length > 0 || '代码名不能为空',
-      confirmButtonText: '保存',
-      cancelButtonText: '取消',
+      inputValidator: (value) => value.trim().length > 0 || t('quickRecord.codeNameRequired'),
+      confirmButtonText: t('common.save'),
+      cancelButtonText: t('common.cancel'),
       closeOnClickModal: false
     })
     return String((result as { value?: unknown }).value ?? '').trim()
@@ -322,7 +324,7 @@ async function saveQuickRecordCacheAndClose(cacheIdToSave: string) {
   } catch (error) {
     cachedForRestore.value = false
     const message = error instanceof Error ? error.message : String(error)
-    ElMessage.error(`缓存快捷记录失败: ${message}`)
+    ElMessage.error(`${t('quickRecord.cacheFailed')}: ${message}`)
     return
   }
   await appWindow.close()
@@ -385,16 +387,16 @@ onUnmounted(() => {
     <div data-tauri-drag-region class="quick-titlebar">
       <div data-tauri-drag-region class="quick-title-drag-region"></div>
       <div class="quick-controls">
-        <button type="button" class="quick-control" :class="{ active: pinned }" title="窗口置顶" @click="togglePin">
+        <button type="button" class="quick-control" :class="{ active: pinned }" :title="t('quickRecord.pin')" @click="togglePin">
           <Pin :size="14" />
         </button>
-        <button type="button" class="quick-control" title="保存" :disabled="saving" @click="saveAsFormalCode">
+        <button type="button" class="quick-control" :title="t('quickRecord.save')" :disabled="saving" @click="saveAsFormalCode">
           <Check :size="14" />
         </button>
-        <button type="button" class="quick-control" title="最小化" @click="appWindow.minimize()">
+        <button type="button" class="quick-control" :title="t('quickRecord.minimize')" @click="appWindow.minimize()">
           <Minus :size="14" />
         </button>
-        <button type="button" class="quick-control close" title="关闭，不保存" @click="appWindow.close()">
+        <button type="button" class="quick-control close" :title="t('quickRecord.closeWithoutSaving')" @click="appWindow.close()">
           <X :size="14" />
         </button>
       </div>
@@ -421,6 +423,7 @@ onUnmounted(() => {
 <style scoped>
 .quick-record-view {
   width: 100%;
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -430,6 +433,7 @@ onUnmounted(() => {
 }
 
 .quick-titlebar {
+  min-width: 0;
   height: 28px;
   flex: 0 0 auto;
   display: flex;
@@ -441,18 +445,23 @@ onUnmounted(() => {
 }
 
 .quick-title-drag-region {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   height: 100%;
 }
 
 .quick-controls {
   display: flex;
+  flex: 0 1 auto;
   align-items: stretch;
+  min-width: 0;
   height: 100%;
 }
 
 .quick-control {
   width: 28px;
+  min-width: 0;
+  flex: 1 1 28px;
   height: 100%;
   display: inline-flex;
   align-items: center;
@@ -500,6 +509,7 @@ onUnmounted(() => {
 
 .quick-editor-shell {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   padding: 12px;
@@ -530,10 +540,15 @@ onUnmounted(() => {
 }
 
 .quick-editor-shell :deep(.advanced-editor-container) {
+  min-width: 0;
   min-height: 100%;
 }
 
 .quick-editor-shell :deep(.advanced-editor) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   min-height: calc(100vh - 58px);
+  overflow-wrap: anywhere;
 }
 </style>

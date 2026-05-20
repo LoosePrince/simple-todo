@@ -15,7 +15,32 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use uuid::Uuid;
 
 static WINDOW_COUNTER: AtomicU64 = AtomicU64::new(0);
-const STARTUP_BACKGROUND_COLOR: Color = Color(255, 255, 255, 255);
+const LIGHT_STARTUP_BACKGROUND_COLOR: Color = Color(255, 255, 255, 255);
+const DARK_STARTUP_BACKGROUND_COLOR: Color = Color(26, 26, 26, 255);
+
+fn startup_theme(config: &AppConfig) -> &'static str {
+    if config.theme == "dark" {
+        "dark"
+    } else {
+        "light"
+    }
+}
+
+fn startup_background_color(config: &AppConfig) -> Color {
+    if config.theme == "dark" {
+        DARK_STARTUP_BACKGROUND_COLOR
+    } else {
+        LIGHT_STARTUP_BACKGROUND_COLOR
+    }
+}
+
+fn app_url(config: &AppConfig, route: &str) -> String {
+    format!("index.html?theme={}{}", startup_theme(config), route)
+}
+
+fn startup_main_url(config: &AppConfig) -> WebviewUrl {
+    WebviewUrl::App(app_url(config, "#/").into())
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TodoItem {
@@ -429,22 +454,23 @@ fn create_new_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let label = format!("main-{}", n);
     let parsed = url.parse::<url::Url>().map_err(|e| e.to_string())?;
     let webview_url = WebviewUrl::External(parsed);
+    let config = get_app_config(app.clone());
     WebviewWindowBuilder::new(&app, &label, webview_url)
         .title("简易代办")
         .inner_size(800.0, 600.0)
-        .background_color(STARTUP_BACKGROUND_COLOR)
+        .background_color(startup_background_color(&config))
         .decorations(false)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-fn build_quick_record_window(app: &tauri::AppHandle, cache: Option<&QuickRecordCache>) -> Result<(), String> {
+fn build_quick_record_window(app: &tauri::AppHandle, config: &AppConfig, cache: Option<&QuickRecordCache>) -> Result<(), String> {
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("quick-record-{}", n);
     let url = match cache {
-        Some(cache) => format!("index.html#/quick-record?cacheId={}", cache.id),
-        None => "index.html#/quick-record".to_string(),
+        Some(cache) => format!("{}?cacheId={}", app_url(config, "#/quick-record"), cache.id),
+        None => app_url(config, "#/quick-record"),
     };
     let width = cache.map(|cache| cache.width).unwrap_or(260.0).max(160.0);
     let height = cache.map(|cache| cache.height).unwrap_or(180.0).max(120.0);
@@ -458,7 +484,7 @@ fn build_quick_record_window(app: &tauri::AppHandle, cache: Option<&QuickRecordC
             cache.map(|cache| cache.y).unwrap_or(100.0),
         )
         .min_inner_size(160.0, 120.0)
-        .background_color(STARTUP_BACKGROUND_COLOR)
+        .background_color(startup_background_color(config))
         .decorations(false)
         .always_on_top(pinned)
         .resizable(true)
@@ -468,18 +494,20 @@ fn build_quick_record_window(app: &tauri::AppHandle, cache: Option<&QuickRecordC
 }
 
 fn open_quick_record_window(app: &tauri::AppHandle) -> Result<(), String> {
-    build_quick_record_window(app, None)
+    let config = get_app_config(app.clone());
+    build_quick_record_window(app, &config, None)
 }
 
 fn restore_quick_record_windows(app: &tauri::AppHandle) {
+    let config = get_app_config(app.clone());
     let caches = read_quick_record_caches(app);
     if caches.is_empty() {
-        let _ = open_quick_record_window(app);
+        let _ = build_quick_record_window(app, &config, None);
         return;
     }
 
     for cache in &caches {
-        let _ = build_quick_record_window(app, Some(cache));
+        let _ = build_quick_record_window(app, &config, Some(cache));
     }
 }
 
@@ -528,10 +556,11 @@ fn show_or_create_main_window(app: &tauri::AppHandle) {
         return;
     }
 
-    if let Ok(window) = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html#/".into()))
+    let config = get_app_config(app.clone());
+    if let Ok(window) = WebviewWindowBuilder::new(app, "main", startup_main_url(&config))
         .title("简易代办")
         .inner_size(800.0, 600.0)
-        .background_color(STARTUP_BACKGROUND_COLOR)
+        .background_color(startup_background_color(&config))
         .decorations(false)
         .resizable(true)
         .build()
@@ -602,9 +631,7 @@ fn main() {
         }))
         .setup(|app| {
             setup_tray(app)?;
-            if let Some(window) = app.get_webview_window("main") {
-                attach_destroy_on_close(&window);
-            }
+            show_or_create_main_window(app.handle());
             let config = get_app_config(app.handle().clone());
             register_global_shortcuts(app.handle(), &config)?;
             Ok(())

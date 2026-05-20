@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      ;(() => {
+        const theme = new URLSearchParams(window.location.search).get('theme')
+        if (theme === 'dark') document.documentElement.classList.add('dark')
+      })()
+    </script>
     <style>
       html,
       body,
@@ -14,12 +20,32 @@
         height: 100%;
         min-height: 100%;
         background: #ffffff;
+        color: #333333;
+      }
+
+      html {
+        --app-font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+        --app-font-size: 14px;
+        --app-text-color: #333333;
+        --app-bg-color: #ffffff;
+        --app-surface-color: #ffffff;
+        --app-border-color: rgba(0, 0, 0, 0.1);
+        background-color: var(--app-bg-color);
+        color: var(--app-text-color);
       }
 
       html.dark,
       html.dark body,
       html.dark #app {
         background: #1a1a1a;
+        color: #e5e5e5;
+      }
+
+      html.dark {
+        --app-text-color: #e5e5e5;
+        --app-bg-color: #1a1a1a;
+        --app-surface-color: #2a2a2a;
+        --app-border-color: #444;
       }
     </style>
     <title>简易代办</title>

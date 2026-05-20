@@ -92,7 +92,7 @@ const taskPopupFolderName = ref('')
 const taskPopupTitle = ref('')
 const taskPopupBlocks = ref<EditorNode[]>([])
 
-const taskPopupTaskRows = computed(() => collectTaskItems(taskPopupBlocks.value))
+const taskPopupTaskRows = computed(() => collectTaskItems(taskPopupBlocks.value, t('todo.emptyTaskText')))
 
 async function openTaskPopup(item: { id: string; folder_name: string; title: string }) {
   const dataPath = settingsStore.config.data_path

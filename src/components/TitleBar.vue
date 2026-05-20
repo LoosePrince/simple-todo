@@ -15,7 +15,7 @@ async function openNewWindow() {
     const label = `main-${Date.now()}-${++newWindowCount}`
     const w = new WebviewWindow(label, {
       url: window.location.href,
-      title: '简易代办',
+      title: t('titleBar.appTitle'),
       width: 800,
       height: 600,
       decorations: false
@@ -44,21 +44,21 @@ const close = () => appWindow.close()
 
 <template>
   <div data-tauri-drag-region class="titlebar">
-    <div class="title">简易代办</div>
+    <div class="title">{{ t('titleBar.appTitle') }}</div>
     <div class="controls">
       <div class="control-btn" :title="t('titleBar.newWindow')" @click="openNewWindow">
         <SquarePlus :size="14" />
       </div>
-      <div class="control-btn pin-btn" :class="{ active: pinned }" @click="togglePin">
+      <div class="control-btn pin-btn" :title="t('titleBar.pin')" :class="{ active: pinned }" @click="togglePin">
         <Pin :size="14" />
       </div>
-      <div class="control-btn" id="btn-minimize" @click="minimize">
+      <div class="control-btn" id="btn-minimize" :title="t('titleBar.minimize')" @click="minimize">
         <Minus :size="14" />
       </div>
-      <div class="control-btn" id="btn-toggle-maximize" @click="toggleMaximize">
+      <div class="control-btn" id="btn-toggle-maximize" :title="t('titleBar.maximize')" @click="toggleMaximize">
         <Maximize :size="14" />
       </div>
-      <div class="control-btn close" id="btn-close" @click="close">
+      <div class="control-btn close" id="btn-close" :title="t('titleBar.close')" @click="close">
         <X :size="14" />
       </div>
     </div>

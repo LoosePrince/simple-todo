@@ -183,12 +183,12 @@ export function getTextFromEditorNode(node: EditorNode): string {
   return ''
 }
 
-export function collectTaskItems(nodes: EditorNode[]): { node: Extract<EditorNode, { type: 'taskItem' }>; label: string }[] {
+export function collectTaskItems(nodes: EditorNode[], emptyLabel = '(无文字)'): { node: Extract<EditorNode, { type: 'taskItem' }>; label: string }[] {
   const out: { node: Extract<EditorNode, { type: 'taskItem' }>; label: string }[] = []
   function walk(items: EditorNode[]) {
     for (const node of items) {
       if (node.type === 'taskItem') {
-        out.push({ node, label: getTextFromEditorNode(node).trim() || '(无文字)' })
+        out.push({ node, label: getTextFromEditorNode(node).trim() || emptyLabel })
       }
       if (isContainerNode(node)) walk(node.children)
     }

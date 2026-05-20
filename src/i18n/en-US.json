@@ -8,7 +8,10 @@
         "cancel": "Cancel",
         "settings": "Settings",
         "about": "About",
-        "saveSuccess": "Save Success"
+        "saveSuccess": "Save Success",
+        "pasteFailed": "Paste failed",
+        "saveFailed": "Save failed",
+        "search": "Search"
     },
     "todo": {
         "listTitle": "Todo List",
@@ -17,6 +20,7 @@
         "taskProgress": "Task progress",
         "taskLoadError": "Failed to load tasks",
         "taskSaveError": "Save failed",
+        "emptyTaskText": "(No text)",
         "deleteConfirmTitle": "Delete confirmation",
         "deleteConfirmMessage": "Are you sure to delete todo \"{title}\"?",
         "deleteSuccess": "Deleted successfully"
@@ -45,7 +49,15 @@
         "orphanTodosDeleteAll": "Delete All",
         "orphanTodosDeleteConfirm": "Are you sure to delete all orphan todo folders? This action cannot be undone.",
         "orphanTodosDeleteSuccess": "Deleted successfully",
-        "orphanTodosDeleteError": "Delete failed"
+        "orphanTodosDeleteError": "Delete failed",
+        "shortcuts": "Shortcuts",
+        "manageShortcuts": "Manage shortcuts",
+        "textColorLight": "Light mode",
+        "textColorDark": "Dark mode",
+        "orphanTodosFindError": "Search failed",
+        "orphanHelpTitle": "About this feature",
+        "orphanHelpDesc1": "Find Orphan Todos scans all todo folders in the current data directory and finds folders that still exist on disk but are no longer shown in the todo list.",
+        "orphanHelpDesc2": "You can use this feature to review how much space these orphan folders take and clean them up after confirming they are no longer needed."
     },
     "editor": {
         "toolbarParagraph": "Paragraph",
@@ -86,7 +98,8 @@
         "imageWidthPercent": "Width %",
         "bubbleBold": "Bold",
         "bubbleItalic": "Italic",
-        "bubbleColor": "Text color"
+        "bubbleColor": "Text color",
+        "foldDefaultTitle": "Fold content"
     },
     "blockEditor": {
         "addBlock": "Add block",
@@ -104,7 +117,36 @@
         "unknownFile": "Unknown file"
     },
     "titleBar": {
-        "newWindow": "New window"
+        "appTitle": "Simple Todo",
+        "newWindow": "New window",
+        "pin": "Pin window",
+        "minimize": "Minimize",
+        "maximize": "Maximize",
+        "close": "Close"
+    },
+    "quickRecord": {
+        "pin": "Pin window",
+        "save": "Save",
+        "minimize": "Minimize",
+        "closeWithoutSaving": "Close without saving",
+        "savedAsFormal": "Saved as formal code",
+        "promptTitle": "Save quick record",
+        "promptCodeName": "Enter code name",
+        "codeNamePlaceholder": "Code name",
+        "codeNameRequired": "Code name is required",
+        "cacheFailed": "Failed to cache quick record"
+    },
+    "shortcuts": {
+        "title": "Shortcuts",
+        "openQuickRecord": "Open quick record",
+        "openQuickRecordDesc": "Create a new quick record window.",
+        "toggleQuickRecord": "Quick hide/show quick records",
+        "toggleQuickRecordDesc": "Toggle between hiding all quick record windows and restoring the windows before hiding.",
+        "recording": "Press a new shortcut, Esc to cancel",
+        "duplicate": "Shortcut is already used by \"{title}\"",
+        "updated": "Shortcut updated",
+        "bindFailed": "Shortcut binding failed",
+        "needModifier": "Shortcut must include Ctrl, Alt, Shift, or Meta"
     },
     "contextMenu": {
         "openFileLocation": "Open file location",

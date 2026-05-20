@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChevronLeft, FolderOpen, Keyboard, Search, Trash2 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../store/settings'
@@ -39,7 +39,7 @@ async function findOrphanTodos() {
     orphanTodos.value = result
     orphanTodosVisible.value = true
   } catch (e) {
-    ElMessage.error(`查找失败: ${e instanceof Error ? e.message : String(e)}`)
+    ElMessage.error(`${t('settings.orphanTodosFindError')}: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
     orphanTodosLoading.value = false
   }
@@ -107,10 +107,10 @@ function onLanguageChange() {
   scheduleSave()
 }
 
-const themes = [
+const themes = computed(() => [
   { label: t('settings.themeLight'), value: 'light' },
   { label: t('settings.themeDark'), value: 'dark' }
-]
+])
 
 const languages = [
   { label: '简体中文', value: 'zh-CN' },
@@ -201,11 +201,11 @@ const handlePickFolder = async () => {
       <el-form-item :label="t('settings.textColor')">
         <div class="color-pickers">
           <div class="color-picker-item">
-            <span>浅色模式: </span>
+            <span>{{ t('settings.textColorLight') }}: </span>
             <el-color-picker v-model="settingsStore.config.text_color_light" @change="scheduleSave" />
           </div>
           <div class="color-picker-item">
-            <span>深色模式: </span>
+            <span>{{ t('settings.textColorDark') }}: </span>
             <el-color-picker v-model="settingsStore.config.text_color_dark" @change="scheduleSave" />
           </div>
         </div>
@@ -219,10 +219,10 @@ const handlePickFolder = async () => {
         </div>
       </el-form-item>
 
-      <el-form-item label="快捷键">
+      <el-form-item :label="t('settings.shortcuts')">
         <el-button @click="router.push('/shortcuts')">
           <Keyboard :size="16" style="margin-right: 4px" />
-          管理快捷键
+          {{ t('settings.manageShortcuts') }}
         </el-button>
       </el-form-item>
 
@@ -241,7 +241,7 @@ const handlePickFolder = async () => {
         <div class="orphan-todos-actions">
           <el-button @click="findOrphanTodos" :loading="orphanTodosLoading">
             <Search :size="16" style="margin-right: 4px" />
-            查找
+            {{ t('common.search') }}
           </el-button>
           <el-button class="orphan-help-btn" text @click="orphanHelpVisible = true">
             ?
@@ -277,12 +277,12 @@ const handlePickFolder = async () => {
         </el-scrollbar>
       </div>
     </el-dialog>
-    <el-dialog v-model="orphanHelpVisible" title="功能说明" width="500px">
+    <el-dialog v-model="orphanHelpVisible" :title="t('settings.orphanHelpTitle')" width="500px">
       <p>
-        “查找未知代办”会扫描当前数据目录下所有代办文件夹，找出那些已经不在代办列表中显示、但仍然存在于磁盘上的“孤立”文件夹。
+        {{ t('settings.orphanHelpDesc1') }}
       </p>
       <p style="margin-top: 8px;">
-        你可以通过这个功能查看这些未知代办占用的空间，并在确认不再需要后进行清理，以减少磁盘占用、保持数据目录整洁。
+        {{ t('settings.orphanHelpDesc2') }}
       </p>
     </el-dialog>
   </div>

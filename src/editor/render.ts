@@ -2,6 +2,7 @@ import { h, ref, type PropType, defineComponent } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { createPathObjectFromPoints, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, getCanvasPoint, pathToD, replaceCanvasObject, resizeCanvasObject, rotateCanvasObject, translateCanvasObject } from './canvas'
+import i18n from '../i18n'
 import type { CanvasObject, CanvasPoint, EditorNode } from './types'
 import type { EditorPath } from './transactions'
 
@@ -595,7 +596,7 @@ export const DataEditorNode = defineComponent({
               componentEmit('node-click', { id: node.id, type: 'fold', event })
               componentEmit('fold-toggle', { id: node.id })
             }
-          }, [h('span', { class: 'fold-title' }, '折叠内容')]),
+          }, [h('span', { class: 'fold-title' }, i18n.global.t('editor.foldDefaultTitle'))]),
           !node.folded ? h('div', {
             class: 'fold-content',
             onClick: (event: MouseEvent) => event.stopPropagation()

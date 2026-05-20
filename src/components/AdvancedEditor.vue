@@ -704,7 +704,7 @@ async function copyCodeBlockContent(id: string) {
   const node = findNodeById(nodes.value, id, 'code') as Extract<EditorNode, { type: 'code' }> | null
   if (!node) return
   await navigator.clipboard.writeText(node.content || '')
-  ElMessage.success(t('editor.codeCopied') || '已复制')
+  ElMessage.success(t('editor.copySuccess'))
 }
 
 function deleteBlockById(id: string) {

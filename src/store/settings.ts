@@ -2,6 +2,12 @@ import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import i18n from '../i18n'
 
+function getStartupTheme() {
+  const theme = new URLSearchParams(window.location.search).get('theme')
+  if (theme === 'dark' || theme === 'light') return theme
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+}
+
 export interface AppConfig {
   data_path: string
   language: string
@@ -20,7 +26,7 @@ export const useSettingsStore = defineStore('settings', {
     config: {
       data_path: '',
       language: 'zh-CN',
-      theme: 'light',
+      theme: getStartupTheme(),
       font_family: 'Arial',
       font_size: 14,
       text_color_light: '#333333',
