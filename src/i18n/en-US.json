@@ -23,7 +23,16 @@
         "emptyTaskText": "(No text)",
         "deleteConfirmTitle": "Delete confirmation",
         "deleteConfirmMessage": "Are you sure to delete todo \"{title}\"?",
-        "deleteSuccess": "Deleted successfully"
+        "deleteSuccess": "Deleted successfully",
+        "rename": "Rename",
+        "renameTitle": "Rename todo",
+        "renamePrompt": "Enter a new todo name",
+        "renamePlaceholder": "Todo name",
+        "renameRequired": "Todo name is required",
+        "renameSuccess": "Name updated",
+        "openAsQuickRecord": "Open as quick record window",
+        "openQuickRecordError": "Failed to open quick record window",
+        "notFound": "Todo not found"
     },
     "detail": {
         "saved": "Saved",
@@ -99,6 +108,11 @@
         "bubbleBold": "Bold",
         "bubbleItalic": "Italic",
         "bubbleColor": "Text color",
+        "contextFormat": "Format",
+        "contextBlock": "Block type",
+        "contextAlign": "Align",
+        "contextInsert": "Insert",
+        "contextHistory": "History",
         "foldDefaultTitle": "Fold content"
     },
     "blockEditor": {
@@ -125,6 +139,7 @@
         "close": "Close"
     },
     "quickRecord": {
+        "title": "Quick Record",
         "pin": "Pin window",
         "save": "Save",
         "minimize": "Minimize",

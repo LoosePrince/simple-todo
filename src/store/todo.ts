@@ -36,6 +36,13 @@ export const useTodoStore = defineStore('todo', {
         await this.saveTodos()
       }
     },
+    async renameTodo(id: string, title: string) {
+      const todo = this.todos.find(t => t.id === id)
+      const nextTitle = title.trim()
+      if (!todo || !nextTitle) return
+      todo.title = nextTitle
+      await this.saveTodos()
+    },
     async deleteTodo(id: string) {
       const todo = this.todos.find(t => t.id === id)
       if (todo) {

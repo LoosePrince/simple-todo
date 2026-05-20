@@ -38,6 +38,15 @@ fn app_url(config: &AppConfig, route: &str) -> String {
     format!("index.html?theme={}{}", startup_theme(config), route)
 }
 
+fn quick_record_debug(message: &str) {
+    println!("[quick-record-debug] {}", message);
+}
+
+#[tauri::command]
+fn quick_record_debug_log(message: String) {
+    quick_record_debug(&message);
+}
+
 fn startup_main_url(config: &AppConfig) -> WebviewUrl {
     WebviewUrl::App(app_url(config, "#/").into())
 }
@@ -465,6 +474,59 @@ fn create_new_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     Ok(())
 }
 
+fn build_todo_quick_record_window(
+    app: &tauri::AppHandle,
+    config: &AppConfig,
+    todo_id: &str,
+    todo_title: &str,
+    folder_name: &str,
+) -> Result<(), String> {
+    let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let label = format!("quick-record-{}", n);
+    let url = format!(
+        "{}?todoId={}&todoTitle={}&folderName={}",
+        app_url(config, "#/quick-record"),
+        url::form_urlencoded::byte_serialize(todo_id.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(todo_title.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(folder_name.as_bytes()).collect::<String>()
+    );
+    quick_record_debug(&format!("build_todo_window:start label={} todo_id={} folder_name={} url={}", label, todo_id, folder_name, url));
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title("快捷记录")
+        .inner_size(420.0, 520.0)
+        .position(100.0, 100.0)
+        .min_inner_size(160.0, 120.0)
+        .background_color(startup_background_color(config))
+        .decorations(false)
+        .always_on_top(true)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    quick_record_debug(&format!("build_todo_window:built label={}", window.label()));
+    Ok(())
+}
+
+#[tauri::command]
+fn open_todo_quick_record_window(app: tauri::AppHandle, todo_id: String) -> Result<(), String> {
+    quick_record_debug(&format!("open_todo_command:start todo_id={}", todo_id));
+    let config = get_app_config(app.clone());
+    quick_record_debug(&format!("open_todo_command:config theme={} data_path={}", config.theme, config.data_path));
+    let todo = get_todos(config.data_path.clone())
+        .into_iter()
+        .find(|item| item.id == todo_id)
+        .ok_or_else(|| "Todo not found".to_string())?;
+    quick_record_debug(&format!("open_todo_command:todo_found id={} title={} folder={}", todo.id, todo.title, todo.folder_name));
+    app.clone()
+        .run_on_main_thread(move || {
+            quick_record_debug(&format!("open_todo_command:main_thread_enter id={}", todo.id));
+            match build_todo_quick_record_window(&app, &config, &todo.id, &todo.title, &todo.folder_name) {
+                Ok(()) => quick_record_debug(&format!("open_todo_command:main_thread_done id={}", todo.id)),
+                Err(error) => quick_record_debug(&format!("open_todo_command:main_thread_error id={} error={}", todo.id, error)),
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
 fn build_quick_record_window(app: &tauri::AppHandle, config: &AppConfig, cache: Option<&QuickRecordCache>) -> Result<(), String> {
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("quick-record-{}", n);
@@ -648,6 +710,8 @@ fn main() {
             move_data,
             get_file_icon,
             create_new_window,
+            open_todo_quick_record_window,
+            quick_record_debug_log,
             save_quick_record_cache,
             get_quick_record_cache,
             delete_quick_record_cache,

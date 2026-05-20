@@ -51,12 +51,15 @@ export function getExt(fileName = ''): string {
 export function getFloatingRect(target: Element, options: { toolbarWidth: number; toolbarHeight: number; padding: number }) {
   const rect = target.getBoundingClientRect()
   const { toolbarWidth, toolbarHeight, padding } = options
-  let top = rect.top - toolbarHeight - padding < 0
-    ? rect.bottom + window.scrollY + padding
-    : rect.top + window.scrollY - toolbarHeight - padding
-  let left = rect.left + rect.width / 2 - toolbarWidth / 2 + window.scrollX
-  top = Math.max(padding, top)
-  left = Math.max(padding, Math.min(window.innerWidth - toolbarWidth - padding + window.scrollX, left))
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const availableAbove = rect.top - padding
+  const availableBelow = viewportHeight - rect.bottom - padding
+  const preferBelow = availableAbove < toolbarHeight && availableBelow >= availableAbove
+  const rawTop = preferBelow ? rect.bottom + padding : rect.top - toolbarHeight - padding
+  const rawLeft = rect.left + rect.width / 2 - toolbarWidth / 2
+  const top = Math.max(padding, Math.min(viewportHeight - toolbarHeight - padding, rawTop))
+  const left = Math.max(padding, Math.min(viewportWidth - toolbarWidth - padding, rawLeft))
   return { top, left }
 }
 

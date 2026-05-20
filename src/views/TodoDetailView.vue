@@ -11,6 +11,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AdvancedEditor from '../components/AdvancedEditor.vue'
+import EditorContextMenu from '../components/EditorContextMenu.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import { collectUsedAssetNames, normalizeDocument, stableDocumentJson, stripFileSizes } from '../editor/document'
 import { detectCodeLanguage, isLikelyCodePaste, normalizePastedText } from '../editor/paste'
@@ -33,6 +34,7 @@ const editorRef = ref<InstanceType<typeof AdvancedEditor> | null>(null)
 const insertAtIndexRef = ref(-1)
 /** 图片/文件右键菜单 */
 const contextMenu = ref<{ x: number; y: number; type: 'image' | 'file'; assetPath: string } | null>(null)
+const editorMenu = ref<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 })
 /** 菜单定位（避让边缘后的 left/top） */
 const menuPosition = ref({ left: 0, top: 0 })
 const contextMenuRef = ref<HTMLElement | null>(null)
@@ -365,6 +367,28 @@ function handleInsertFold() {
   editorRef.value?.insertFoldBlock?.()
 }
 
+function openEditorContextMenu(event: MouseEvent) {
+  editorRef.value?.saveSelection?.()
+  editorMenu.value = { visible: true, x: event.clientX, y: event.clientY }
+}
+
+function closeEditorContextMenu() {
+  editorMenu.value.visible = false
+}
+
+function runEditorContextAction(action: string, value?: string) {
+  closeEditorContextMenu()
+  editorRef.value?.saveSelection?.()
+  if (action === 'insertImage') return void handleImageUpload()
+  if (action === 'insertFile') return void handleFileUpload()
+  if (action === 'insertTask') return handleInsertTask()
+  if (action === 'insertCode') return handleInsertCode()
+  if (action === 'insertMarkdown') return handleInsertMarkdown()
+  if (action === 'insertCanvas') return handleInsertCanvas()
+  if (action === 'insertFold') return handleInsertFold()
+  handleCommand(action, value)
+}
+
 async function handleCanvasImageUpload(payload: { canvasId: string }) {
   try {
     const selected = await open({
@@ -649,7 +673,7 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
       </el-tooltip>
     </div>
 
-    <div class="editor-wrapper">
+    <div class="editor-wrapper" @contextmenu.prevent="openEditorContextMenu">
       <EditorToolbar
         @mousedown="onToolbarMouseDown"
         @command="handleCommand"
@@ -673,6 +697,14 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
         />
       </el-scrollbar>
     </div>
+    <EditorContextMenu
+      :visible="editorMenu.visible"
+      :x="editorMenu.x"
+      :y="editorMenu.y"
+      allow-assets
+      @close="closeEditorContextMenu"
+      @action="runEditorContextAction"
+    />
     <Teleport to="body">
       <div
         v-if="contextMenu"

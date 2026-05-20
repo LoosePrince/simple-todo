@@ -6,11 +6,12 @@ import { LogicalPosition, LogicalSize, getCurrentWindow } from '@tauri-apps/api/
 import { mkdir, stat, writeFile } from '@tauri-apps/plugin-fs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Minus, Pin, X } from 'lucide-vue-next'
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AdvancedEditor from '../components/AdvancedEditor.vue'
+import EditorContextMenu from '../components/EditorContextMenu.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
-import { normalizeDocument, stripFileSizes } from '../editor/document'
+import { normalizeDocument, stableDocumentJson, stripFileSizes } from '../editor/document'
 import { detectCodeLanguage, isLikelyCodePaste, normalizePastedText } from '../editor/paste'
 import type { EditorNode } from '../editor/types'
 import { useSettingsStore } from '../store/settings'
@@ -21,12 +22,24 @@ const { t } = useI18n()
 const settingsStore = useSettingsStore()
 const todoStore = useTodoStore()
 
+const routeParams = new URLSearchParams(window.location.hash.split('?')[1] || '')
+const cacheId = routeParams.get('cacheId')
+const todoId = routeParams.get('todoId')
+const routeTodoTitle = routeParams.get('todoTitle') || ''
+const routeFolderName = routeParams.get('folderName') || ''
+const isTodoQuickRecord = ref(Boolean(todoId && routeFolderName))
+const todoFolderName = ref(routeFolderName)
+const loadedTodoTitle = ref(routeTodoTitle)
+const lastSavedJson = ref('')
+const autoSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+
 const blocks = ref<EditorNode[]>([{ type: 'p', id: crypto.randomUUID(), children: [] }])
 const editorRef = ref<InstanceType<typeof AdvancedEditor> | null>(null)
 const saving = ref(false)
 const pinned = ref(true)
 const tempFolderName = ref('')
 const savedAsFormal = ref(false)
+const editorMenu = ref<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 })
 
 type SavedAsset = {
   url: string
@@ -52,17 +65,37 @@ type QuickRecordHidePayload = {
   window_label: string
 }
 
-const cacheId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('cacheId')
 let unlistenCacheAndClose: (() => void) | null = null
 const cachedForRestore = ref(false)
 
+function debugLog(message: string, data?: unknown) {
+  const detail = data == null ? message : `${message} ${JSON.stringify(data)}`
+  console.info(`[quick-record-debug] ${detail}`)
+  invoke('quick_record_debug_log', { message: `frontend:${detail}` }).catch(() => {})
+}
+
+window.addEventListener('error', (event) => {
+  debugLog('window_error', {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno
+  })
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  debugLog('unhandled_rejection', String(event.reason))
+})
+
 async function ensureDataReady() {
+  debugLog('ensureDataReady:start', { hasDataPath: Boolean(settingsStore.config.data_path), todoDataPath: todoStore.dataPath })
   if (!settingsStore.config.data_path) {
     await settingsStore.loadConfig()
   }
   if (!todoStore.dataPath) {
     await todoStore.loadTodos(settingsStore.config.data_path)
   }
+  debugLog('ensureDataReady:done', { dataPath: settingsStore.config.data_path, todoCount: todoStore.todos.length })
 }
 
 function asArrayBuffer(x: ArrayBuffer | Uint8Array): ArrayBuffer {
@@ -85,6 +118,7 @@ function getExt(pathOrName: string, fallback = 'bin'): string {
 
 async function ensureTempFolder(): Promise<string> {
   await ensureDataReady()
+  if (isTodoQuickRecord.value) return todoFolderName.value
   if (!tempFolderName.value) {
     tempFolderName.value = await invoke<string>('create_todo_folder', { dataPath: settingsStore.config.data_path })
   }
@@ -187,6 +221,10 @@ async function handleEditorPasteFiles(payload: { files: File[]; text: string }) 
 }
 
 async function saveAsFormalCode() {
+  if (isTodoQuickRecord.value) {
+    await saveTodoQuickRecord(false)
+    return
+  }
   if (saving.value) return
   const title = await promptCodeName()
   if (!title) return
@@ -234,6 +272,78 @@ async function promptCodeName(): Promise<string> {
   } catch {
     return ''
   }
+}
+
+async function loadTodoQuickRecord() {
+  debugLog('loadTodoQuickRecord:start', {
+    todoId,
+    todoFolderName: todoFolderName.value,
+    title: loadedTodoTitle.value,
+    href: window.location.href,
+    hash: window.location.hash,
+    search: window.location.search
+  })
+  if (!todoId || !todoFolderName.value) {
+    debugLog('loadTodoQuickRecord:missing_route_data', { todoId, folderName: todoFolderName.value })
+    return
+  }
+  await settingsStore.loadConfig()
+  debugLog('loadTodoQuickRecord:config_loaded', { dataPath: settingsStore.config.data_path, theme: settingsStore.config.theme })
+  tempFolderName.value = todoFolderName.value
+  try {
+    debugLog('loadTodoQuickRecord:get_detail_start', { folderName: todoFolderName.value })
+    const content = await invoke<string>('get_todo_detail', {
+      dataPath: settingsStore.config.data_path,
+      folderName: todoFolderName.value
+    })
+    debugLog('loadTodoQuickRecord:get_detail_done', { contentLength: content.length })
+    const parsed = JSON.parse(content)
+    blocks.value = Array.isArray(parsed) ? normalizeDocument(parsed as EditorNode[]) : []
+    debugLog('loadTodoQuickRecord:normalized', { blockCount: blocks.value.length })
+  } catch (error) {
+    debugLog('loadTodoQuickRecord:error', String(error))
+    blocks.value = []
+  }
+  if (blocks.value.length === 0) {
+    blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
+  }
+  lastSavedJson.value = stableDocumentJson(blocks.value)
+  debugLog('loadTodoQuickRecord:done', { blockCount: blocks.value.length, savedLength: lastSavedJson.value.length })
+}
+
+async function saveTodoQuickRecord(silent = true) {
+  debugLog('saveTodoQuickRecord:start', { silent, isTodoQuickRecord: isTodoQuickRecord.value, folderName: todoFolderName.value, saving: saving.value })
+  if (!isTodoQuickRecord.value || !todoFolderName.value || saving.value) return
+  saving.value = true
+  try {
+    await ensureDataReady()
+    const content = stripFileSizes(normalizeDocument(blocks.value))
+    await invoke('save_todo_detail', {
+      dataPath: settingsStore.config.data_path,
+      folderName: todoFolderName.value,
+      content: JSON.stringify(content)
+    })
+    lastSavedJson.value = stableDocumentJson(content)
+    debugLog('saveTodoQuickRecord:done', { savedLength: lastSavedJson.value.length })
+    if (!silent) ElMessage.success(t('common.saveSuccess'))
+  } catch (error) {
+    debugLog('saveTodoQuickRecord:error', String(error))
+    const message = error instanceof Error ? error.message : String(error)
+    ElMessage.error(`${t('common.saveFailed')}: ${message}`)
+  } finally {
+    saving.value = false
+  }
+}
+
+function scheduleTodoQuickRecordSave() {
+  if (!isTodoQuickRecord.value || !lastSavedJson.value) return
+  if (autoSaveTimer.value) clearTimeout(autoSaveTimer.value)
+  autoSaveTimer.value = setTimeout(() => {
+    autoSaveTimer.value = null
+    if (stableDocumentJson(blocks.value) !== lastSavedJson.value) {
+      void saveTodoQuickRecord(true)
+    }
+  }, 1000)
 }
 
 function isSaveShortcut(event: KeyboardEvent) {
@@ -300,6 +410,30 @@ function handleInsertFold() {
   editorRef.value?.insertFoldBlock?.()
 }
 
+function openEditorContextMenu(event: MouseEvent) {
+  editorRef.value?.saveSelection?.()
+  editorMenu.value = { visible: true, x: event.clientX, y: event.clientY }
+}
+
+function closeEditorContextMenu() {
+  editorMenu.value.visible = false
+}
+
+function runEditorContextAction(action: string, value?: string) {
+  closeEditorContextMenu()
+  editorRef.value?.saveSelection?.()
+  if (action === 'insertImage') return
+  if (action === 'insertFile') return
+  if (action === 'insertTask') return handleInsertTask()
+  if (action === 'insertCode') return handleInsertCode()
+  if (action === 'insertMarkdown') return handleInsertMarkdown()
+  if (action === 'insertCanvas') return handleInsertCanvas()
+  if (action === 'insertFold') return handleInsertFold()
+  editorRef.value?.execCommand(action, value)
+}
+
+watch(blocks, () => scheduleTodoQuickRecordSave(), { deep: true })
+
 async function saveQuickRecordCacheAndClose(cacheIdToSave: string) {
   if (cachedForRestore.value) return
   cachedForRestore.value = true
@@ -355,7 +489,7 @@ async function loadQuickRecordCache() {
 }
 
 async function cleanupTempFolder() {
-  if (!tempFolderName.value || savedAsFormal.value || cachedForRestore.value) return
+  if (!tempFolderName.value || savedAsFormal.value || cachedForRestore.value || isTodoQuickRecord.value) return
   try {
     await invoke('delete_todo_folder', {
       dataPath: settingsStore.config.data_path,
@@ -365,18 +499,43 @@ async function cleanupTempFolder() {
 }
 
 onMounted(async () => {
-  await settingsStore.applySettings()
+  debugLog('mounted:start', {
+    isTodoQuickRecord: isTodoQuickRecord.value,
+    todoId,
+    routeFolderName,
+    routeTodoTitle,
+    href: window.location.href,
+    hash: window.location.hash,
+    search: window.location.search
+  })
+  if (isTodoQuickRecord.value) {
+    await loadTodoQuickRecord()
+  } else {
+    debugLog('mounted:normal_quick_record_start')
+    await settingsStore.applySettings()
+    await loadQuickRecordCache()
+  }
+  debugLog('mounted:set_always_on_top_start')
   await appWindow.setAlwaysOnTop(true)
-  await loadQuickRecordCache()
+  debugLog('mounted:set_always_on_top_done')
   unlistenCacheAndClose = await listen<QuickRecordHidePayload>('quick-record-cache-and-close', (event) => {
     if (event.payload.window_label !== appWindow.label) return
+    if (isTodoQuickRecord.value) {
+      void appWindow.close()
+      return
+    }
     void saveQuickRecordCacheAndClose(event.payload.cache_id)
   })
   window.addEventListener('keydown', onKeydown)
+  debugLog('mounted:done')
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  if (autoSaveTimer.value) clearTimeout(autoSaveTimer.value)
+  if (isTodoQuickRecord.value && stableDocumentJson(blocks.value) !== lastSavedJson.value) {
+    void saveTodoQuickRecord(true)
+  }
   unlistenCacheAndClose?.()
   void cleanupTempFolder()
 })
@@ -385,12 +544,14 @@ onUnmounted(() => {
 <template>
   <div class="quick-record-view">
     <div data-tauri-drag-region class="quick-titlebar">
-      <div data-tauri-drag-region class="quick-title-drag-region"></div>
+      <div data-tauri-drag-region class="quick-title-drag-region">
+        <span v-if="isTodoQuickRecord" data-tauri-drag-region class="quick-title-text">{{ loadedTodoTitle }}</span>
+      </div>
       <div class="quick-controls">
         <button type="button" class="quick-control" :class="{ active: pinned }" :title="t('quickRecord.pin')" @click="togglePin">
           <Pin :size="14" />
         </button>
-        <button type="button" class="quick-control" :title="t('quickRecord.save')" :disabled="saving" @click="saveAsFormalCode">
+        <button type="button" class="quick-control" :title="isTodoQuickRecord ? t('common.save') : t('quickRecord.save')" :disabled="saving" @click="saveAsFormalCode">
           <Check :size="14" />
         </button>
         <button type="button" class="quick-control" :title="t('quickRecord.minimize')" @click="appWindow.minimize()">
@@ -414,9 +575,18 @@ onUnmounted(() => {
       />
     </div>
 
-    <div class="quick-editor-shell">
+    <div class="quick-editor-shell" @contextmenu.prevent="openEditorContextMenu">
       <AdvancedEditor ref="editorRef" v-model="blocks" @paste-files="handleEditorPasteFiles" />
     </div>
+
+    <EditorContextMenu
+      :visible="editorMenu.visible"
+      :x="editorMenu.x"
+      :y="editorMenu.y"
+      :allow-assets="false"
+      @close="closeEditorContextMenu"
+      @action="runEditorContextAction"
+    />
   </div>
 </template>
 
@@ -448,6 +618,18 @@ onUnmounted(() => {
   flex: 1 1 0;
   min-width: 0;
   height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.quick-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .quick-controls {

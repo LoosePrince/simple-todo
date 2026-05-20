@@ -94,7 +94,7 @@ const redoStack = ref<EditorNode[][]>([])
 const MAX_HISTORY = 80
 const TOOLBAR_PADDING = 8
 const FLOATING_TOOLBAR_WIDTH = 360
-const FLOATING_TOOLBAR_HEIGHT = 40
+const FLOATING_TOOLBAR_HEIGHT = 44
 
 const nodes = computed(() => normalizeDocument(props.modelValue || []))
 const selectedImageNode = computed(() => selectedImageId.value ? findNodeById(nodes.value, selectedImageId.value, 'image') as Extract<EditorNode, { type: 'image' }> | null : null)

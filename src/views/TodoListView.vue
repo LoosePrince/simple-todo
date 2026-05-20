@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Info, Plus, Settings, Trash2 } from 'lucide-vue-next'
+import { Edit3, ExternalLink, Info, MoreHorizontal, Plus, Settings, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -78,6 +79,74 @@ const confirmDeleteTodo = async (id: string, title: string) => {
     ElMessage.success(t('todo.deleteSuccess'))
   } catch {
     // 用户取消或关闭弹窗，不做处理
+  }
+}
+
+async function renameTodo(id: string, title: string) {
+  try {
+    const result = await ElMessageBox.prompt(t('todo.renamePrompt'), t('todo.renameTitle'), {
+      inputValue: title,
+      inputPlaceholder: t('todo.renamePlaceholder'),
+      inputValidator: (value) => value.trim().length > 0 || t('todo.renameRequired'),
+      confirmButtonText: t('common.save'),
+      cancelButtonText: t('common.cancel'),
+      closeOnClickModal: false
+    })
+    const nextTitle = String((result as { value?: unknown }).value ?? '').trim()
+    if (!nextTitle || nextTitle === title) return
+    await todoStore.renameTodo(id, nextTitle)
+    ElMessage.success(t('todo.renameSuccess'))
+  } catch {
+    // 用户取消或关闭弹窗，不做处理
+  }
+}
+
+async function openTodoAsQuickRecord(id: string) {
+  const item = todoStore.todos.find(todo => todo.id === id)
+  if (!item) {
+    ElMessage.error(t('todo.notFound'))
+    return
+  }
+
+  console.info('[quick-record-debug] list:open:start', { id, folderName: item.folder_name })
+  invoke('quick_record_debug_log', { message: `frontend:list:open:start id=${id} folder=${item.folder_name}` }).catch(() => {})
+  try {
+    const query = new URLSearchParams({
+      todoId: item.id,
+      todoTitle: item.title,
+      folderName: item.folder_name
+    })
+    const theme = new URLSearchParams(window.location.search).get('theme') || settingsStore.config.theme || 'light'
+    const url = `index.html?theme=${encodeURIComponent(theme)}#/quick-record?${query.toString()}`
+    const label = `quick-record-${Date.now()}-${item.id}`
+    console.info('[quick-record-debug] list:webview:create:start', { label, url })
+    invoke('quick_record_debug_log', { message: `frontend:list:webview:create:start label=${label} url=${url}` }).catch(() => {})
+    const win = new WebviewWindow(label, {
+      url,
+      title: t('quickRecord.title'),
+      width: 420,
+      height: 520,
+      minWidth: 160,
+      minHeight: 120,
+      x: 100,
+      y: 100,
+      decorations: false,
+      alwaysOnTop: true,
+      resizable: true
+    })
+    win.once('tauri://created', () => {
+      console.info('[quick-record-debug] list:webview:create:created', { label })
+      invoke('quick_record_debug_log', { message: `frontend:list:webview:create:created label=${label}` }).catch(() => {})
+    })
+    win.once('tauri://error', (event) => {
+      console.error('[quick-record-debug] list:webview:create:error', event)
+      invoke('quick_record_debug_log', { message: `frontend:list:webview:create:error label=${label} error=${JSON.stringify(event.payload)}` }).catch(() => {})
+    })
+  } catch (error) {
+    console.error('[quick-record-debug] list:open:error', error)
+    invoke('quick_record_debug_log', { message: `frontend:list:open:error id=${id} error=${String(error)}` }).catch(() => {})
+    const message = error instanceof Error ? error.message : String(error)
+    ElMessage.error(`${t('todo.openQuickRecordError')}: ${message}`)
   }
 }
 
@@ -199,14 +268,31 @@ function closeTaskPopup() {
         >
           {{ item.title }}
         </span>
-        <el-button
-          type="danger"
-          circle
-          size="small"
-          @click="confirmDeleteTodo(item.id, item.title)"
-        >
-          <Trash2 :size="14" />
-        </el-button>
+        <el-dropdown trigger="click" @command="(command: string) => {
+          if (command === 'rename') renameTodo(item.id, item.title)
+          if (command === 'quickRecord') openTodoAsQuickRecord(item.id)
+          if (command === 'delete') confirmDeleteTodo(item.id, item.title)
+        }">
+          <el-button circle size="small" class="todo-more-btn" @click.stop>
+            <MoreHorizontal :size="14" />
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="rename">
+                <Edit3 :size="14" class="todo-menu-icon" />
+                {{ t('todo.rename') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="quickRecord">
+                <ExternalLink :size="14" class="todo-menu-icon" />
+                {{ t('todo.openAsQuickRecord') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="delete" divided>
+                <Trash2 :size="14" class="todo-menu-icon" />
+                {{ t('common.delete') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </el-scrollbar>
 
@@ -331,6 +417,14 @@ function closeTaskPopup() {
 .task-popup-label.completed {
   text-decoration: line-through;
   color: #999;
+}
+
+.todo-more-btn {
+  flex-shrink: 0;
+}
+
+.todo-menu-icon {
+  margin-right: 6px;
 }
 
 .title {
