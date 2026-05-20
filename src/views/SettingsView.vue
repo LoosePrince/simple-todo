@@ -2,7 +2,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChevronLeft, FolderOpen, Search, Trash2 } from 'lucide-vue-next'
+import { ChevronLeft, FolderOpen, Keyboard, Search, Trash2 } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -21,7 +21,6 @@ const orphanTodosVisible = ref(false)
 const orphanTodos = ref<OrphanFolder[]>([])
 const orphanTodosLoading = ref(false)
 const orphanHelpVisible = ref(false)
-const recordingShortcut = ref(false)
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -29,60 +28,6 @@ function formatSize(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
-}
-
-function normalizeShortcutKey(key: string): string {
-  if (key === ' ') return 'Space'
-  if (key.length === 1) return key.toUpperCase()
-  const aliases: Record<string, string> = {
-    Escape: 'Esc',
-    ArrowUp: 'Up',
-    ArrowDown: 'Down',
-    ArrowLeft: 'Left',
-    ArrowRight: 'Right'
-  }
-  return aliases[key] || key
-}
-
-async function saveShortcut(shortcut: string) {
-  settingsStore.config.quick_record_shortcut = shortcut
-  try {
-    await settingsStore.saveConfig()
-    ElMessage.success('快捷键已更新')
-  } catch (e) {
-    ElMessage.error(`快捷键绑定失败: ${e instanceof Error ? e.message : String(e)}`)
-  }
-}
-
-function startShortcutRecording() {
-  recordingShortcut.value = true
-}
-
-function onShortcutKeydown(event: KeyboardEvent) {
-  if (!recordingShortcut.value) return
-  event.preventDefault()
-  event.stopPropagation()
-
-  if (event.key === 'Escape') {
-    recordingShortcut.value = false
-    return
-  }
-
-  const modifiers: string[] = []
-  if (event.ctrlKey) modifiers.push('Ctrl')
-  if (event.altKey) modifiers.push('Alt')
-  if (event.shiftKey) modifiers.push('Shift')
-  if (event.metaKey) modifiers.push('Meta')
-
-  const key = normalizeShortcutKey(event.key)
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return
-  if (modifiers.length === 0) {
-    ElMessage.warning('快捷键至少需要包含 Ctrl、Alt、Shift 或 Meta')
-    return
-  }
-
-  recordingShortcut.value = false
-  void saveShortcut([...modifiers, key].join('+'))
 }
 
 async function findOrphanTodos() {
@@ -274,16 +219,11 @@ const handlePickFolder = async () => {
         </div>
       </el-form-item>
 
-      <el-form-item label="快捷记录快捷键">
-        <button
-          type="button"
-          class="shortcut-recorder"
-          :class="{ recording: recordingShortcut }"
-          @click="startShortcutRecording"
-          @keydown="onShortcutKeydown"
-        >
-          {{ recordingShortcut ? '请按下新的快捷键，Esc 取消' : (settingsStore.config.quick_record_shortcut || 'Ctrl+Shift+N') }}
-        </button>
+      <el-form-item label="快捷键">
+        <el-button @click="router.push('/shortcuts')">
+          <Keyboard :size="16" style="margin-right: 4px" />
+          管理快捷键
+        </el-button>
       </el-form-item>
 
       <el-form-item :label="t('settings.dataPath')">
@@ -391,28 +331,6 @@ const handlePickFolder = async () => {
 
 .dark .launch-at-login-desc {
   color: #aaa;
-}
-
-.shortcut-recorder {
-  min-width: 220px;
-  padding: 7px 12px;
-  font-family: var(--app-font-family);
-  font-size: 13px;
-  color: var(--app-text-color);
-  background: var(--app-surface-color);
-  border: 1px solid var(--app-border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.shortcut-recorder:hover,
-.shortcut-recorder.recording {
-  border-color: var(--el-color-primary, #409eff);
-}
-
-.shortcut-recorder.recording {
-  color: var(--el-color-primary, #409eff);
 }
 
 .dark .color-picker-item span {

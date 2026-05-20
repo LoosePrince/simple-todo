@@ -2,18 +2,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    webview::Color,
+    Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use std::fs;
-use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use uuid::Uuid;
 
 static WINDOW_COUNTER: AtomicU64 = AtomicU64::new(0);
+const STARTUP_BACKGROUND_COLOR: Color = Color(255, 255, 255, 255);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TodoItem {
@@ -21,6 +23,38 @@ struct TodoItem {
     title: String,
     status: String,
     folder_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct QuickRecordCache {
+    id: String,
+    content: String,
+    temp_folder_name: String,
+    #[serde(default = "default_quick_record_x")]
+    x: f64,
+    #[serde(default = "default_quick_record_y")]
+    y: f64,
+    width: f64,
+    height: f64,
+    pinned: bool,
+}
+
+#[derive(Deserialize, Debug)]
+struct QuickRecordCacheInput {
+    id: Option<String>,
+    content: String,
+    temp_folder_name: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    pinned: bool,
+}
+
+#[derive(Clone, Serialize)]
+struct QuickRecordHidePayload {
+    cache_id: String,
+    window_label: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -36,10 +70,24 @@ struct AppConfig {
     launch_at_login: bool,
     #[serde(default = "default_quick_record_shortcut")]
     quick_record_shortcut: String,
+    #[serde(default = "default_hide_quick_record_shortcut")]
+    hide_quick_record_shortcut: String,
 }
 
 fn default_quick_record_shortcut() -> String {
     "Ctrl+Shift+N".to_string()
+}
+
+fn default_hide_quick_record_shortcut() -> String {
+    "Ctrl+Shift+H".to_string()
+}
+
+fn default_quick_record_x() -> f64 {
+    100.0
+}
+
+fn default_quick_record_y() -> f64 {
+    100.0
 }
 
 fn default_config(handle: &tauri::AppHandle) -> AppConfig {
@@ -53,7 +101,76 @@ fn default_config(handle: &tauri::AppHandle) -> AppConfig {
         text_color_dark: "#e5e5e5".to_string(),
         launch_at_login: false,
         quick_record_shortcut: default_quick_record_shortcut(),
+        hide_quick_record_shortcut: default_hide_quick_record_shortcut(),
     }
+}
+
+fn quick_record_cache_dir(handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(handle
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("quick-records"))
+}
+
+fn quick_record_cache_path(handle: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
+    Ok(quick_record_cache_dir(handle)?.join(format!("{}.json", id)))
+}
+
+fn read_quick_record_caches(handle: &tauri::AppHandle) -> Vec<QuickRecordCache> {
+    let Ok(cache_dir) = quick_record_cache_dir(handle) else {
+        return vec![];
+    };
+    let Ok(entries) = fs::read_dir(cache_dir) else {
+        return vec![];
+    };
+
+    let mut caches: Vec<QuickRecordCache> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+        .filter_map(|content| serde_json::from_str::<QuickRecordCache>(&content).ok())
+        .collect();
+    caches.sort_by(|a, b| a.id.cmp(&b.id));
+    caches
+}
+
+#[tauri::command]
+fn save_quick_record_cache(handle: tauri::AppHandle, cache: QuickRecordCacheInput) -> Result<String, String> {
+    let id = cache.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let cache_dir = quick_record_cache_dir(&handle)?;
+    fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    let data = QuickRecordCache {
+        id: id.clone(),
+        content: cache.content,
+        temp_folder_name: cache.temp_folder_name,
+        x: cache.x,
+        y: cache.y,
+        width: cache.width,
+        height: cache.height,
+        pinned: cache.pinned,
+    };
+    let content = serde_json::to_string(&data).map_err(|e| e.to_string())?;
+    fs::write(cache_dir.join(format!("{}.json", id)), content).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+#[tauri::command]
+fn get_quick_record_cache(handle: tauri::AppHandle, id: String) -> Result<Option<QuickRecordCache>, String> {
+    let path = quick_record_cache_path(&handle, &id)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&content).map(Some).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_quick_record_cache(handle: tauri::AppHandle, id: String) -> Result<(), String> {
+    let path = quick_record_cache_path(&handle, &id)?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -78,7 +195,7 @@ fn save_app_config(handle: tauri::AppHandle, config: AppConfig) -> Result<(), St
     let config_path = config_dir.join("config.json");
     let content = serde_json::to_string(&config).map_err(|e| e.to_string())?;
     fs::write(config_path, content).map_err(|e| e.to_string())?;
-    register_quick_record_shortcut(&handle, &config.quick_record_shortcut).map_err(|e| e.to_string())?;
+    register_global_shortcuts(&handle, &config).map_err(|e| e.to_string())?;
     let _ = handle.emit("config-changed", ());
     Ok(())
 }
@@ -315,36 +432,123 @@ fn create_new_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     WebviewWindowBuilder::new(&app, &label, webview_url)
         .title("简易代办")
         .inner_size(800.0, 600.0)
+        .background_color(STARTUP_BACKGROUND_COLOR)
         .decorations(false)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-fn open_quick_record_window(app: &tauri::AppHandle) -> Result<(), String> {
+fn build_quick_record_window(app: &tauri::AppHandle, cache: Option<&QuickRecordCache>) -> Result<(), String> {
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("quick-record-{}", n);
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html#/quick-record".into()))
+    let url = match cache {
+        Some(cache) => format!("index.html#/quick-record?cacheId={}", cache.id),
+        None => "index.html#/quick-record".to_string(),
+    };
+    let width = cache.map(|cache| cache.width).unwrap_or(260.0).max(160.0);
+    let height = cache.map(|cache| cache.height).unwrap_or(180.0).max(120.0);
+    let pinned = cache.map(|cache| cache.pinned).unwrap_or(true);
+
+    WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
         .title("快捷记录")
-        .inner_size(260.0, 180.0)
-        .min_inner_size(160.0, 180.0)
+        .inner_size(width, height)
+        .position(
+            cache.map(|cache| cache.x).unwrap_or(100.0),
+            cache.map(|cache| cache.y).unwrap_or(100.0),
+        )
+        .min_inner_size(160.0, 120.0)
+        .background_color(STARTUP_BACKGROUND_COLOR)
         .decorations(false)
-        .always_on_top(true)
+        .always_on_top(pinned)
         .resizable(true)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-fn register_quick_record_shortcut(app: &tauri::AppHandle, shortcut_text: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let shortcut = shortcut_text.parse::<Shortcut>()?;
+fn open_quick_record_window(app: &tauri::AppHandle) -> Result<(), String> {
+    build_quick_record_window(app, None)
+}
+
+fn restore_quick_record_windows(app: &tauri::AppHandle) {
+    let caches = read_quick_record_caches(app);
+    if caches.is_empty() {
+        let _ = open_quick_record_window(app);
+        return;
+    }
+
+    for cache in &caches {
+        let _ = build_quick_record_window(app, Some(cache));
+    }
+}
+
+fn toggle_quick_record_windows(app: &tauri::AppHandle) {
+    let mut has_visible_quick_record = false;
+
+    for (_, window) in app.webview_windows() {
+        if window.label().starts_with("quick-record-") && window.is_visible().unwrap_or(false) {
+            has_visible_quick_record = true;
+            let cache_id = Uuid::new_v4().to_string();
+            let window_label = window.label().to_string();
+            let _ = window.emit("quick-record-cache-and-close", QuickRecordHidePayload { cache_id, window_label });
+        }
+    }
+
+    if !has_visible_quick_record {
+        restore_quick_record_windows(app);
+    }
+}
+
+fn register_global_shortcuts(app: &tauri::AppHandle, config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
     let _ = app.global_shortcut().unregister_all();
-    app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
+
+    let quick_record_shortcut = config.quick_record_shortcut.parse::<Shortcut>()?;
+    app.global_shortcut().on_shortcut(quick_record_shortcut, |app, _shortcut, event| {
         if event.state() == ShortcutState::Pressed {
             let _ = open_quick_record_window(app);
         }
     })?;
+
+    let hide_quick_record_shortcut = config.hide_quick_record_shortcut.parse::<Shortcut>()?;
+    app.global_shortcut().on_shortcut(hide_quick_record_shortcut, |app, _shortcut, event| {
+        if event.state() == ShortcutState::Pressed {
+            toggle_quick_record_windows(app);
+        }
+    })?;
+
     Ok(())
+}
+
+fn show_or_create_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return;
+    }
+
+    if let Ok(window) = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html#/".into()))
+        .title("简易代办")
+        .inner_size(800.0, 600.0)
+        .background_color(STARTUP_BACKGROUND_COLOR)
+        .decorations(false)
+        .resizable(true)
+        .build()
+    {
+        attach_destroy_on_close(&window);
+        let _ = window.set_focus();
+    }
+}
+
+fn attach_destroy_on_close(window: &tauri::WebviewWindow) {
+    let window_to_destroy = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = window_to_destroy.destroy();
+        }
+    });
 }
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
@@ -359,11 +563,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
+                show_or_create_main_window(app);
             }
             "quit" => {
                 app.exit(0);
@@ -378,11 +578,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
             } = event
             {
                 let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
+                show_or_create_main_window(app);
             }
         })
         .build(app)?;
@@ -402,23 +598,15 @@ fn main() {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.set_focus();
-            }
+            show_or_create_main_window(app);
         }))
         .setup(|app| {
             setup_tray(app)?;
             if let Some(window) = app.get_webview_window("main") {
-                let window_to_hide = window.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window_to_hide.hide();
-                    }
-                });
+                attach_destroy_on_close(&window);
             }
             let config = get_app_config(app.handle().clone());
-            register_quick_record_shortcut(app.handle(), &config.quick_record_shortcut)?;
+            register_global_shortcuts(app.handle(), &config)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -433,8 +621,18 @@ fn main() {
             move_data,
             get_file_icon,
             create_new_window,
+            save_quick_record_cache,
+            get_quick_record_cache,
+            delete_quick_record_cache,
             find_orphan_todo_folders
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if let RunEvent::ExitRequested { api, code, .. } = event {
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

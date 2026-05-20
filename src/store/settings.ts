@@ -12,6 +12,7 @@ export interface AppConfig {
   text_color_dark: string
   launch_at_login?: boolean
   quick_record_shortcut?: string
+  hide_quick_record_shortcut?: string
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -26,6 +27,7 @@ export const useSettingsStore = defineStore('settings', {
       text_color_dark: '#e5e5e5',
       launch_at_login: false,
       quick_record_shortcut: 'Ctrl+Shift+N',
+      hide_quick_record_shortcut: 'Ctrl+Shift+H',
     } as AppConfig,
   }),
   getters: {
@@ -41,6 +43,7 @@ export const useSettingsStore = defineStore('settings', {
       this.config = await invoke('get_app_config')
       if (this.config.launch_at_login == null) this.config.launch_at_login = false
       if (!this.config.quick_record_shortcut) this.config.quick_record_shortcut = 'Ctrl+Shift+N'
+      if (!this.config.hide_quick_record_shortcut) this.config.hide_quick_record_shortcut = 'Ctrl+Shift+H'
       this.applyI18n()
       this.applyTheme()
       await this.syncAutostart()

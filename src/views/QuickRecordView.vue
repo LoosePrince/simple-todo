@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { join } from '@tauri-apps/api/path'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { LogicalPosition, LogicalSize, getCurrentWindow } from '@tauri-apps/api/window'
 import { mkdir, stat, writeFile } from '@tauri-apps/plugin-fs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Minus, Pin, X } from 'lucide-vue-next'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import AdvancedEditor from '../components/AdvancedEditor.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import { normalizeDocument, stripFileSizes } from '../editor/document'
@@ -32,6 +33,26 @@ type SavedAsset = {
   fileName: string
   fileSize: number
 }
+
+type QuickRecordCache = {
+  id: string
+  content: string
+  temp_folder_name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  pinned: boolean
+}
+
+type QuickRecordHidePayload = {
+  cache_id: string
+  window_label: string
+}
+
+const cacheId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('cacheId')
+let unlistenCacheAndClose: (() => void) | null = null
+const cachedForRestore = ref(false)
 
 async function ensureDataReady() {
   if (!settingsStore.config.data_path) {
@@ -277,8 +298,62 @@ function handleInsertFold() {
   editorRef.value?.insertFoldBlock?.()
 }
 
+async function saveQuickRecordCacheAndClose(cacheIdToSave: string) {
+  if (cachedForRestore.value) return
+  cachedForRestore.value = true
+  try {
+    await ensureDataReady()
+    const folderName = tempFolderName.value || await ensureTempFolder()
+    const scaleFactor = await appWindow.scaleFactor()
+    const size = await appWindow.innerSize()
+    const position = await appWindow.outerPosition()
+    await invoke<string>('save_quick_record_cache', {
+      cache: {
+        id: cacheIdToSave,
+        content: JSON.stringify(stripFileSizes(normalizeDocument(blocks.value))),
+        temp_folder_name: folderName,
+        x: position.x / scaleFactor,
+        y: position.y / scaleFactor,
+        width: size.width / scaleFactor,
+        height: size.height / scaleFactor,
+        pinned: pinned.value
+      }
+    })
+  } catch (error) {
+    cachedForRestore.value = false
+    const message = error instanceof Error ? error.message : String(error)
+    ElMessage.error(`缓存快捷记录失败: ${message}`)
+    return
+  }
+  await appWindow.close()
+}
+
+async function loadQuickRecordCache() {
+  if (!cacheId) return
+  const cache = await invoke<QuickRecordCache | null>('get_quick_record_cache', { id: cacheId })
+  if (!cache) return
+
+  tempFolderName.value = cache.temp_folder_name
+  pinned.value = cache.pinned
+  await appWindow.setSize(new LogicalSize(cache.width, cache.height))
+  await appWindow.setPosition(new LogicalPosition(cache.x, cache.y))
+  await appWindow.setAlwaysOnTop(cache.pinned)
+
+  try {
+    const content = JSON.parse(cache.content)
+    blocks.value = Array.isArray(content) ? normalizeDocument(content as EditorNode[]) : []
+  } catch {
+    blocks.value = []
+  }
+  if (blocks.value.length === 0) {
+    blocks.value = [{ type: 'p', id: crypto.randomUUID(), children: [] }]
+  }
+  await invoke('delete_quick_record_cache', { id: cache.id })
+  await nextTick()
+}
+
 async function cleanupTempFolder() {
-  if (!tempFolderName.value || savedAsFormal.value) return
+  if (!tempFolderName.value || savedAsFormal.value || cachedForRestore.value) return
   try {
     await invoke('delete_todo_folder', {
       dataPath: settingsStore.config.data_path,
@@ -290,11 +365,17 @@ async function cleanupTempFolder() {
 onMounted(async () => {
   await settingsStore.applySettings()
   await appWindow.setAlwaysOnTop(true)
+  await loadQuickRecordCache()
+  unlistenCacheAndClose = await listen<QuickRecordHidePayload>('quick-record-cache-and-close', (event) => {
+    if (event.payload.window_label !== appWindow.label) return
+    void saveQuickRecordCacheAndClose(event.payload.cache_id)
+  })
   window.addEventListener('keydown', onKeydown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  unlistenCacheAndClose?.()
   void cleanupTempFolder()
 })
 </script>
@@ -349,7 +430,7 @@ onUnmounted(() => {
 }
 
 .quick-titlebar {
-  height: 34px;
+  height: 28px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -371,7 +452,7 @@ onUnmounted(() => {
 }
 
 .quick-control {
-  width: 34px;
+  width: 28px;
   height: 100%;
   display: inline-flex;
   align-items: center;
@@ -422,6 +503,30 @@ onUnmounted(() => {
   min-height: 0;
   overflow: auto;
   padding: 12px;
+}
+
+@media (max-width: 259px), (max-height: 179px) {
+  .quick-titlebar {
+    height: 24px;
+  }
+
+  .quick-control {
+    width: 24px;
+  }
+
+  .quick-control :deep(svg) {
+    width: 12px;
+    height: 12px;
+  }
+
+  .quick-editor-shell {
+    padding: 0;
+  }
+
+  .quick-editor-shell :deep(.advanced-editor) {
+    padding: 0 1.5ch;
+    min-height: calc(100vh - 24px);
+  }
 }
 
 .quick-editor-shell :deep(.advanced-editor-container) {

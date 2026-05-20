@@ -719,7 +719,7 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
+  padding: 8px;
   border-bottom: 1px solid rgba(0,0,0,0.05);
   gap: 10px;
   min-width: 0;
@@ -739,7 +739,7 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
 
 .header-left h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -749,9 +749,9 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
   font-family: var(--app-font-family);
   color: var(--app-text-color);
   background: rgba(0, 0, 0, 0.06);
@@ -790,6 +790,52 @@ const handleEditorPasteFiles = async (payload: { files: File[]; text: string }) 
 
 .editor-scroll {
   flex: 1;
+}
+
+@media (max-width: 259px), (max-height: 179px) {
+  .todo-detail-view {
+    max-width: none;
+  }
+
+  .header {
+    padding: 4px 1.5ch;
+    gap: 6px;
+  }
+
+  .header-left {
+    gap: 6px;
+  }
+
+  .header-left h2 {
+    font-size: 13px;
+  }
+
+  .header :deep(.el-button.is-circle) {
+    width: 22px;
+    height: 22px;
+    min-height: 22px;
+  }
+
+  .header-save-btn {
+    padding: 3px 6px;
+    gap: 3px;
+    font-size: 11px;
+  }
+
+  .header-save-btn .save-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .editor-wrapper :deep(.editor-toolbar) {
+    min-height: 24px;
+    padding: 2px 1.5ch;
+    gap: 2px;
+  }
+
+  .editor-scroll :deep(.advanced-editor) {
+    padding: 0 1.5ch;
+  }
 }
 
 .context-menu-overlay {

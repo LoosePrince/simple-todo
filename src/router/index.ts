@@ -3,6 +3,7 @@ import TodoListView from '../views/TodoListView.vue'
 import TodoDetailView from '../views/TodoDetailView.vue'
 import QuickRecordView from '../views/QuickRecordView.vue'
 import SettingsView from '../views/SettingsView.vue'
+import ShortcutSettingsView from '../views/ShortcutSettingsView.vue'
 import AboutView from '../views/AboutView.vue'
 
 // 使用 Hash 模式：Tauri 打包后无论用何种 URL 加载，路径都由 # 后决定，避免 path 不匹配导致白屏
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: '/detail/:id', name: 'Detail', component: TodoDetailView },
     { path: '/quick-record', name: 'QuickRecord', component: QuickRecordView },
     { path: '/settings', name: 'Settings', component: SettingsView },
+    { path: '/shortcuts', name: 'Shortcuts', component: ShortcutSettingsView },
     { path: '/about', name: 'About', component: AboutView }
   ]
 })
