@@ -19,6 +19,34 @@ export interface AppConfig {
   launch_at_login?: boolean
   quick_record_shortcut?: string
   hide_quick_record_shortcut?: string
+  sync_enabled?: boolean
+  sync_provider?: 'webdav'
+  webdav_url?: string
+  webdav_username?: string
+  webdav_remote_dir?: string
+  sync_interval_seconds?: number
+  sync_on_startup?: boolean
+  sync_on_change?: boolean
+  sync_conflict_default_action?: 'ask' | 'keep_local' | 'use_remote' | 'duplicate_remote'
+}
+
+export const syncConflictActions = [
+  'ask',
+  'keep_local',
+  'use_remote',
+  'duplicate_remote'
+] as const
+
+export const defaultSyncConfig = {
+  sync_enabled: false,
+  sync_provider: 'webdav' as const,
+  webdav_url: '',
+  webdav_username: '',
+  webdav_remote_dir: '/simple-todo',
+  sync_interval_seconds: 300,
+  sync_on_startup: true,
+  sync_on_change: true,
+  sync_conflict_default_action: 'ask' as const,
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -34,6 +62,7 @@ export const useSettingsStore = defineStore('settings', {
       launch_at_login: false,
       quick_record_shortcut: 'Ctrl+Shift+N',
       hide_quick_record_shortcut: 'Ctrl+Shift+H',
+      ...defaultSyncConfig,
     } as AppConfig,
   }),
   getters: {
@@ -46,10 +75,14 @@ export const useSettingsStore = defineStore('settings', {
   },
   actions: {
     async loadConfig() {
-      this.config = await invoke('get_app_config')
+      this.config = { ...defaultSyncConfig, ...(await invoke('get_app_config')) }
       if (this.config.launch_at_login == null) this.config.launch_at_login = false
       if (!this.config.quick_record_shortcut) this.config.quick_record_shortcut = 'Ctrl+Shift+N'
       if (!this.config.hide_quick_record_shortcut) this.config.hide_quick_record_shortcut = 'Ctrl+Shift+H'
+      if (!this.config.sync_provider) this.config.sync_provider = 'webdav'
+      if (!this.config.webdav_remote_dir) this.config.webdav_remote_dir = '/simple-todo'
+      if (!this.config.sync_interval_seconds) this.config.sync_interval_seconds = 300
+      if (!this.config.sync_conflict_default_action) this.config.sync_conflict_default_action = 'ask'
       this.applyI18n()
       this.applyTheme()
       await this.syncAutostart()

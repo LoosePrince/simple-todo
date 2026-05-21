@@ -3,34 +3,59 @@ import { listen } from '@tauri-apps/api/event'
 import { computed, onMounted, onUnmounted } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import { useSettingsStore } from './store/settings'
+import { useSyncStore } from './store/sync'
 import { useTodoStore } from './store/todo'
 
 const settingsStore = useSettingsStore()
+const syncStore = useSyncStore()
 const todoStore = useTodoStore()
 const unlistenFns: Array<() => void> = []
 const isQuickRecord = computed(() => window.location.hash.startsWith('#/quick-record'))
+let suppressNextChangeSync = false
 
 function preventContextMenu(e: Event) {
   e.preventDefault()
 }
 
 onMounted(async () => {
-  settingsStore.applySettings().catch(() => {})
+  settingsStore.applySettings().then(() => {
+    syncStore.startAutoSync()
+  }).catch(() => {})
   document.addEventListener('contextmenu', preventContextMenu)
 
   const unlistenConfig = await listen('config-changed', () => {
-    settingsStore.loadConfig().catch(() => {})
+    settingsStore.loadConfig().then(() => {
+      syncStore.startAutoSync()
+    }).catch(() => {})
   })
   unlistenFns.push(unlistenConfig)
 
   const unlistenTodos = await listen('todos-changed', () => {
     const path = settingsStore.config.data_path
     if (path) todoStore.loadTodos(path).catch(() => {})
+    if (suppressNextChangeSync) {
+      suppressNextChangeSync = false
+      return
+    }
+    syncStore.scheduleChangeSync()
   })
   unlistenFns.push(unlistenTodos)
+
+  const unlistenSyncCompleted = await listen('sync-local-updated', () => {
+    suppressNextChangeSync = true
+    const path = settingsStore.config.data_path
+    if (path) todoStore.loadTodos(path).catch(() => {})
+  })
+  unlistenFns.push(unlistenSyncCompleted)
+
+  const unlistenDetail = await listen('todo-detail-changed', () => {
+    syncStore.scheduleChangeSync()
+  })
+  unlistenFns.push(unlistenDetail)
 })
 onUnmounted(() => {
   document.removeEventListener('contextmenu', preventContextMenu)
+  syncStore.stopAutoSync()
   unlistenFns.forEach((fn) => fn())
 })
 </script>
