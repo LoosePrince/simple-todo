@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { computed, onMounted, onUnmounted } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import { useSettingsStore } from './store/settings'
@@ -11,6 +12,7 @@ const syncStore = useSyncStore()
 const todoStore = useTodoStore()
 const unlistenFns: Array<() => void> = []
 const isQuickRecord = computed(() => window.location.hash.startsWith('#/quick-record'))
+const isMainWindow = getCurrentWindow().label === 'main'
 let suppressNextChangeSync = false
 
 function preventContextMenu(e: Event) {
@@ -19,13 +21,13 @@ function preventContextMenu(e: Event) {
 
 onMounted(async () => {
   settingsStore.applySettings().then(() => {
-    syncStore.startAutoSync()
+    if (isMainWindow) syncStore.startAutoSync()
   }).catch(() => {})
   document.addEventListener('contextmenu', preventContextMenu)
 
   const unlistenConfig = await listen('config-changed', () => {
     settingsStore.loadConfig().then(() => {
-      syncStore.startAutoSync()
+      if (isMainWindow) syncStore.startAutoSync()
     }).catch(() => {})
   })
   unlistenFns.push(unlistenConfig)
@@ -33,6 +35,7 @@ onMounted(async () => {
   const unlistenTodos = await listen('todos-changed', () => {
     const path = settingsStore.config.data_path
     if (path) todoStore.loadTodos(path).catch(() => {})
+    if (!isMainWindow) return
     if (suppressNextChangeSync) {
       suppressNextChangeSync = false
       return
@@ -49,7 +52,7 @@ onMounted(async () => {
   unlistenFns.push(unlistenSyncCompleted)
 
   const unlistenDetail = await listen('todo-detail-changed', () => {
-    syncStore.scheduleChangeSync()
+    if (isMainWindow) syncStore.scheduleChangeSync()
   })
   unlistenFns.push(unlistenDetail)
 })

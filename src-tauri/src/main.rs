@@ -1153,7 +1153,13 @@ fn ensure_snapshot_remote_dirs(client: &Client, root_url: &str, username: &str, 
 }
 
 #[tauri::command]
-fn sync_now(app: tauri::AppHandle, input: SyncNowInput) -> Result<SyncNowResult, String> {
+async fn sync_now(app: tauri::AppHandle, input: SyncNowInput) -> Result<SyncNowResult, String> {
+    tauri::async_runtime::spawn_blocking(move || sync_now_blocking(app, input))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn sync_now_blocking(app: tauri::AppHandle, input: SyncNowInput) -> Result<SyncNowResult, String> {
     let _guard = SYNC_LOCK.try_lock().map_err(|_| "Sync is already running".to_string())?;
     if input.webdav_username.trim().is_empty() {
         return Err("WebDAV username is required".to_string());
@@ -1313,8 +1319,7 @@ fn sync_now(app: tauri::AppHandle, input: SyncNowInput) -> Result<SyncNowResult,
     Ok(result)
 }
 
-#[tauri::command]
-fn resolve_sync_conflict(app: tauri::AppHandle, input: ResolveSyncConflictInput) -> Result<SyncNowResult, String> {
+fn resolve_sync_conflict_blocking(app: tauri::AppHandle, input: ResolveSyncConflictInput) -> Result<SyncNowResult, String> {
     let _guard = SYNC_LOCK.try_lock().map_err(|_| "Sync is already running".to_string())?;
     if input.action == "later" {
         return Ok(SyncNowResult {
@@ -1369,7 +1374,13 @@ fn resolve_sync_conflict(app: tauri::AppHandle, input: ResolveSyncConflictInput)
 }
 
 #[tauri::command]
-fn prepare_sync_manifest(input: PrepareSyncInput) -> Result<PrepareSyncResult, String> {
+async fn resolve_sync_conflict(app: tauri::AppHandle, input: ResolveSyncConflictInput) -> Result<SyncNowResult, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_sync_conflict_blocking(app, input))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn prepare_sync_manifest_blocking(input: PrepareSyncInput) -> Result<PrepareSyncResult, String> {
     if input.webdav_username.trim().is_empty() {
         return Err("WebDAV username is required".to_string());
     }
@@ -1388,6 +1399,13 @@ fn prepare_sync_manifest(input: PrepareSyncInput) -> Result<PrepareSyncResult, S
         remote_manifest_url: manifest_url,
         remote_initialized: true,
     })
+}
+
+#[tauri::command]
+async fn prepare_sync_manifest(input: PrepareSyncInput) -> Result<PrepareSyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || prepare_sync_manifest_blocking(input))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1412,8 +1430,7 @@ fn clear_webdav_credentials(webdav_url: String, webdav_username: String) -> Resu
     }
 }
 
-#[tauri::command]
-fn test_webdav_connection(input: WebDavConnectionInput) -> Result<WebDavConnectionResult, String> {
+fn test_webdav_connection_blocking(input: WebDavConnectionInput) -> Result<WebDavConnectionResult, String> {
     if input.webdav_username.trim().is_empty() {
         return Err("WebDAV username is required".to_string());
     }
@@ -1443,6 +1460,13 @@ fn test_webdav_connection(input: WebDavConnectionInput) -> Result<WebDavConnecti
         status: status.as_u16().to_string(),
         message,
     })
+}
+
+#[tauri::command]
+async fn test_webdav_connection(input: WebDavConnectionInput) -> Result<WebDavConnectionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || test_webdav_connection_blocking(input))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn default_quick_record_shortcut() -> String {
