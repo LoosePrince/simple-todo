@@ -472,15 +472,31 @@ function handlePaste(payload: { event: ClipboardEvent; path: EditorPath }) {
 function handleCompositionStart(path: EditorPath) {
   captureSelection()
   composingPath.value = pathToAttr(path)
-  composingSelection.value = currentSelection.value ? structuredClone(currentSelection.value) : null
+  composingSelection.value = currentSelection.value ? { anchor: { ...currentSelection.value.anchor, blockPath: [...currentSelection.value.anchor.blockPath] }, focus: { ...currentSelection.value.focus, blockPath: [...currentSelection.value.focus.blockPath] } } : null
 }
 
 function handleCompositionEnd(payload: { event: CompositionEvent; path: EditorPath }) {
   const text = payload.event.data || ''
   composingPath.value = null
+
+  // IME has already written the composed text directly into the contenteditable DOM.
+  // Reset the container to the model's pre-composition text to prevent the IME's
+  // DOM changes from doubling when Vue re-renders from the updated model.
+  const node = getNodeAtPath(nodes.value, payload.path)
+  if (node && isTextBlock(node)) {
+    const attr = pathToAttr(payload.path)
+    const container = editorRef.value?.querySelector(`[data-editor-text-path="${attr}"]`)
+    if (container) {
+      container.textContent = inlineTextValue(node.children)
+    }
+  }
+
   if (composingSelection.value) currentSelection.value = composingSelection.value
   composingSelection.value = null
-  if (text) replaceSelectionWithText(text)
+
+  if (text) {
+    replaceSelectionWithText(text)
+  }
 }
 
 function handleCodeInput(id: string, content: string) {
